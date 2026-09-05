@@ -1,0 +1,575 @@
+/* Bundled rather than linked: the overlay is a file:// page with no network,
+   and a game overlay cannot afford a font that arrives late. Pretendard is SIL
+   OFL 1.1 — see fonts/OFL.txt. One variable file covers every weight the panel
+   uses, which is what keeps the hierarchy (400 body / 600 clock / 700 supply)
+   working at a couple of megabytes instead of four separate files. */
+@font-face {
+  font-family: Pretendard;
+  src: url('fonts/PretendardVariable.woff2') format('woff2-variations');
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: block;
+}
+
+/* The window itself is transparent; only .panel paints. Everything is sized in
+   rem so a single font-size on :root scales the whole overlay. */
+:root {
+  font-size: 15px;
+  /* Set from the 단계 글자 setting. Declared here so the stylesheet renders on
+     its own, outside the app, at the size it ships with. */
+  --step-scale: 1;
+  --bg: rgba(10, 13, 20, 0.82);
+  --edge: rgba(255, 255, 255, 0.07);
+  --text: #f2f5fa;
+  --dim: #8894a8;
+  /* Pulled down off --text so the action reads first and the number second;
+     still well clear of --dim, which is reference-only. */
+  --supply: #b4c2d6;
+  --accent: #ffc24a;
+  --accent-soft: rgba(255, 194, 74, 0.11);
+  --now: #6fe38a;
+  --danger: #ff7b72;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  /* Content-sized, not window-sized: the panel's natural height is what the
+     main process reads back to size the window. */
+  height: auto;
+  background: transparent;
+  overflow: hidden;
+  /* Overlay text must never be selectable or it will fight the game. */
+  user-select: none;
+  cursor: default;
+  font-family: Pretendard, "Segoe UI Variable Display", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  /* Korean set at small sizes reads tighter than the default tracking suggests;
+     the panel is scanned, not read line by line. */
+  letter-spacing: -0.005em;
+  color: var(--text);
+}
+
+/* No drop shadow. The window is sized to its content, so anything drawn
+   outside the border box lands on the game itself rather than on a surface
+   the panel sits on — over a bright screen it reads as a grey smear around
+   the overlay. The panel ends at its own background; the hairline below is
+   what separates it from the terrain. */
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 15px;
+  overflow: hidden;
+  /* A hairline dark outline keeps light text readable over bright terrain. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+/* The glass: background wash and the blurred backdrop behind it.
+
+   This lives on a child rather than on .panel itself because Chromium can
+   apply an element's own `backdrop-filter` to its square border box instead of
+   its rounded one, which leaves the four corner wedges outside the radius
+   tinted rather than clear — the panel then reads as a rectangle with a
+   rounded shape drawn on it. Filtering a child and letting the parent's
+   `overflow: hidden` cut it to the radius is clipping Chromium gets right.
+
+   Invisible while the filter was blur-only; the moment the filter started
+   darkening and desaturating, the corners gave it away. */
+.panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    /* Light entering the top edge, falling off fast: it gives the surface
+       somewhere for the light to come from, which a flat fill only implies. */
+    radial-gradient(125% 85% at 50% -12%, rgba(255, 255, 255, 0.055), transparent 62%),
+    linear-gradient(180deg, rgba(19, 24, 34, 0.82) 0%, rgba(12, 16, 23, 0.86) 45%, rgba(9, 12, 18, 0.89) 100%);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+  /* Desaturated and darkened, not saturated. Saturating pulls the map's colour
+     through the glass, so the panel goes warm on a desert and cold on ice; the
+     overlay should look the same on every map. */
+  backdrop-filter: blur(22px) saturate(0.7) brightness(0.82);
+  /* A layer with backdrop-filter is composited, and a composited descendant
+     can escape an ancestor's rounded overflow clip. Clipping it to the same
+     shape itself costs nothing and closes that off. */
+  border-radius: inherit;
+  clip-path: inset(0 round 15px);
+  pointer-events: none;
+}
+
+/* Above the glass layer. Without this the ::after, being last in paint order,
+   would cover the rows it is supposed to sit behind. */
+.header,
+.steps,
+.footer {
+  position: relative;
+  z-index: 1;
+}
+
+/* The edge hairline, painted as a masked ring rather than a border so it can
+   carry a gradient — `border` takes one flat colour, and nothing real is lit
+   evenly on all four sides. Brightest where light would fall, gone by the
+   middle, faintly back at the bottom as bounce.
+
+   It sits above the rows, but it is 1px at the very edge and they are inset
+   well clear of it. */
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.07) 28%,
+    rgba(255, 255, 255, 0.025) 55%,
+    rgba(255, 255, 255, 0.05) 82%,
+    rgba(255, 255, 255, 0.11) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ---------- header ---------- */
+
+.header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem 0.55rem;
+}
+
+/* A flat 1px rule reads as a table border. One that fades at both ends divides
+   the panel without drawing a box inside it. */
+.header::after,
+.footer::before {
+  content: '';
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1) 12%,
+    rgba(255, 255, 255, 0.1) 88%,
+    transparent
+  );
+}
+
+.header::after {
+  bottom: 0;
+}
+
+.footer::before {
+  top: 0;
+}
+
+.panel:not(.locked) .header {
+  cursor: grab;
+  -webkit-app-region: drag;
+}
+
+.title {
+  min-width: 0;
+}
+
+.build-name {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+#build-label {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The Ctrl+Alt+N key that recalls this build. */
+/* Sized against the build name beside it: at 0.72rem it read as a footnote
+   next to the title rather than a label on it. */
+.slot {
+  flex: none;
+  display: none;
+  min-width: 1.3rem;
+  padding: 0 0.25rem;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  text-shadow: none;
+}
+
+.slot.shown {
+  display: inline-block;
+}
+
+/* Hotkey feedback: the panel is click-through mid-game, so a slot switch has to
+   announce itself on screen. */
+.flash {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 196, 77, 0.92);
+  color: #171100;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
+  text-shadow: none;
+  opacity: 0;
+  transform: translateY(-100%);
+  transition: opacity 140ms ease, transform 140ms ease;
+  pointer-events: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flash.shown {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Reference, not headline. */
+.matchup {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+
+.clock-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  flex: none;
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.3rem;
+  font-weight: 550;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.badges {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* With no badge to show, do not leave the clock sitting on dead space. */
+.badges:empty {
+  display: none;
+}
+
+.badge {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-shadow: none;
+}
+
+.badge.manual {
+  background: rgba(255, 196, 77, 0.22);
+  color: var(--accent);
+}
+
+.badge.replay {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--dim);
+}
+
+/* ---------- steps ---------- */
+
+.steps {
+  flex: none;
+  list-style: none;
+  padding: 0.35rem 0;
+}
+
+/* The step list carries a second size axis on top of the panel-wide 크기: the
+   build order is the thing being read mid-game, so it can be enlarged without
+   the header, the footer and the window growing with it.
+
+   Columns, gap and row padding scale with it, or bigger digits would spill out
+   of a fixed 시간 column. They scale off `--step-scale` directly rather than
+   off each row's own font-size: `.step.next` is set in a larger type, and
+   em-based columns would make that one row's grid wider than the rest and break
+   the alignment the list is read by.
+
+   The horizontal padding stays fixed — it lines the list up with the header and
+   footer, which are not on this axis. */
+.step {
+  display: grid;
+  grid-template-columns:
+    calc(2.9rem * var(--step-scale)) calc(2.5rem * var(--step-scale)) 1fr auto;
+  align-items: baseline;
+  gap: calc(0.4rem * var(--step-scale));
+  /* `position: relative` so the imminent row can carry its pulsing rail. */
+  position: relative;
+  padding: calc(0.3rem * var(--step-scale)) 0.75rem;
+  font-size: calc(0.88rem * var(--step-scale));
+  line-height: 1.35;
+}
+
+/* Icon column. The width is fixed rather than fitted to the row's contents so
+   that every action label starts at the same x, which is what makes the list
+   scannable. 95% of steps name exactly one thing, so one slot is enough. */
+.step .icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
+
+.step .icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The button art is a square with its own border; rounding the corners
+     slightly keeps it from fighting the panel's own edges. Done steps need no
+     rule of their own — `.step.done` already fades the whole row. */
+  border-radius: 2px;
+}
+
+/* The pictures stay on the 아이콘 setting rather than following 단계 글자: they
+   are art, not type, and their column width is the one the main process adds to
+   the window (`ICON_COLUMN`). Scaling them here would put the two out of step. */
+body.icons-small .step {
+  grid-template-columns:
+    calc(2.9rem * var(--step-scale)) calc(2.5rem * var(--step-scale)) var(--icon-size) 1fr auto;
+  align-items: center;
+  --icon-size: 1.15rem;
+}
+
+/* Icon-first: bigger pictures and a taller row, for reading at a glance rather
+   than scanning. The text stays — the picture says what, the text says how many. */
+body.icons-large .step {
+  grid-template-columns:
+    calc(2.9rem * var(--step-scale)) calc(2.5rem * var(--step-scale)) var(--icon-size) 1fr auto;
+  align-items: center;
+  --icon-size: 2.5rem;
+  padding-top: calc(0.3rem * var(--step-scale));
+  padding-bottom: calc(0.3rem * var(--step-scale));
+  font-size: calc(0.95rem * var(--step-scale));
+}
+
+.step.next .icon img {
+  /* The current step already has a background and a brighter label. A ring here
+     ties the picture to it without adding another colour. */
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.step .at {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--dim);
+  text-align: right;
+}
+
+.step .supply {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--supply);
+  /* Centred, not right-aligned. Supply reads as a tag on the row rather than a
+     running scale the way the clock does, and hard against the action text it
+     looked crowded to the right. The cost is that 2- and 3-digit values no
+     longer line up on the units column; tabular figures keep the drift to half
+     a digit either side. */
+  text-align: center;
+}
+
+/* Breathing room between the picture and its label. The row's own 0.4rem gap
+   is enough between two numbers but not after a 2.5rem image, which ends up
+   almost touching the word it belongs to.
+
+   Deliberately not scaled by --step-scale: it is paid for by the window width
+   the main process adds for the icon column (ICON_COLUMN), and that is figured
+   off the 크기 setting alone. Scaling it here would put the two out of step. */
+body.icons-small .step .action,
+body.icons-large .step .action {
+  padding-left: 0.3rem;
+}
+
+.step .action {
+  font-weight: 450;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step .note {
+  display: block;
+  font-size: calc(0.72rem * var(--step-scale));
+  color: var(--dim);
+  white-space: normal;
+}
+
+.step .until {
+  font-variant-numeric: tabular-nums;
+  /* Close to the step text rather than well under it. This is the one number
+     being watched in the seconds before a step is due, so it has to read at a
+     glance from across the desk; the countdown only ever renders on the current
+     row, so the width it takes back from the action column costs one line. */
+  font-size: calc(0.82rem * var(--step-scale));
+  font-weight: 600;
+  color: var(--dim);
+}
+
+/* Faded, not struck through: the strikethrough was saying the same thing as
+   the opacity and made the words harder to read on the way past. Done steps
+   still have to be readable enough to count your place by. */
+.step.done {
+  opacity: 0.3;
+}
+
+/* A rail down the left instead of a filled block: it marks the row without
+   putting a coloured rectangle between the eye and the words. The rail is part
+   of the box, so its width comes back out of the left padding — otherwise this
+   row's columns sit 3px right of every other row. */
+.step.next {
+  background: linear-gradient(90deg, var(--accent-soft), transparent 65%);
+  border-left: 3px solid var(--accent);
+  box-shadow: inset 2px 0 8px -4px var(--accent);
+  margin: 0.12rem 0;
+  padding-inline: 0.75rem;
+  padding-left: calc(0.75rem - 3px);
+  font-size: calc(0.98rem * var(--step-scale));
+  font-weight: 600;
+}
+
+.step.next .at,
+.step.next .until {
+  color: var(--accent);
+}
+
+.step.next .supply {
+  color: var(--accent);
+}
+
+/* Pulsing the whole row's background makes the text flicker underneath it.
+   Pulsing the rail says the same thing and leaves the words alone. */
+.step.imminent {
+  background: linear-gradient(90deg, rgba(111, 227, 138, 0.13), transparent 65%);
+  border-left-color: var(--now);
+  box-shadow: inset 2px 0 8px -4px var(--now);
+}
+
+.step.imminent::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--now);
+  animation: rail-pulse 1s ease-in-out infinite;
+}
+
+.step.imminent .at,
+.step.imminent .until {
+  color: var(--now);
+}
+
+@keyframes rail-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem 0.2rem;
+  font-size: calc(0.62rem * var(--step-scale));
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #6f7b8e;
+  text-transform: uppercase;
+}
+
+/* The rule runs out from the label rather than the label floating above one. */
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--edge);
+}
+
+.empty {
+  padding: 1.25rem 0.85rem;
+  font-size: 0.85rem;
+  color: var(--dim);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.empty code {
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+
+/* ---------- footer ---------- */
+
+.footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem 0.5rem;
+  font-size: 0.7rem;
+  color: var(--dim);
+  font-size: 0.7rem;
+  color: var(--dim);
+}
+
+.status.live {
+  color: var(--now);
+}
+
+.hint {
+  flex: none;
+  opacity: 0.75;
+}

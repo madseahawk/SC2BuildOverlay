@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>SC2 Build Overlay</title>
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <div id="panel" class="panel locked">
+      <div id="flash" class="flash"></div>
+
+      <header id="drag" class="header">
+        <div class="title">
+          <span id="build-name" class="build-name">
+            <span id="slot" class="slot"></span>
+            <span id="build-label">빌드 없음</span>
+          </span>
+          <span id="matchup" class="matchup"></span>
+        </div>
+        <div class="clock-wrap">
+          <span id="clock" class="clock">0:00</span>
+          <span id="badges" class="badges"></span>
+        </div>
+      </header>
+
+      <ul id="steps" class="steps"></ul>
+
+      <footer class="footer">
+        <span id="status" class="status">SC2 대기 중</span>
+        <span id="hint" class="hint">Ctrl+Alt+C 제어창</span>
+      </footer>
+    </div>
+
+    <script src="sound.js"></script>
+    <script src="overlay.js"></script>
+  </body>
+</html>

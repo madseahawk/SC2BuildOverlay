@@ -1,0 +1,62 @@
+{
+  "name": "sc2-build-overlay",
+  "version": "0.8.0",
+  "description": "Hand-written StarCraft II build order overlay, synced to the in-game clock",
+  "main": "src/main/main.js",
+  "author": "SC2 Build Overlay",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "cross-env SC2_MOCK=1 electron .",
+    "icon": "electron tools/make-icon.js",
+    "preview": "node tools/preview-server.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.sc2buildoverlay.app",
+    "productName": "SC2 Build Overlay",
+    "files": [
+      "src/**/*",
+      "seed/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      "assets/icon.ico",
+      "assets/cue.wav",
+      "assets/icons/manifest.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SC2 Build Overlay"
+    },
+    "portable": {
+      "artifactName": "SC2BuildOverlay-${version}-portable.exe"
+    }
+  }
+}

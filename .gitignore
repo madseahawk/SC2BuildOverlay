@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.editor-preview.html
+icon-report.txt
+assets/icon.original.ico
+
+# 단계 그림은 블리자드 저작물이라 저장소에 두지 않습니다. manifest.json 만
+# 남기고, 이미지는 각자 tools/fetch-icons.js 로 받거나 앱에서 내려받습니다.
+assets/icons/*.png

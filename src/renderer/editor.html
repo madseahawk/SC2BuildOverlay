@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>빌드오더 편집기</title>
+    <link rel="stylesheet" href="editor.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <h1>빌드</h1>
+          <button id="new-build" type="button" class="ghost">+ 새 빌드</button>
+        </div>
+        <ul id="build-list" class="build-list"></ul>
+        <button id="open-dir" type="button" class="ghost wide">빌드 폴더 열기</button>
+      </aside>
+
+      <main class="main">
+        <section class="card">
+          <div class="grid-4">
+            <label class="field span-2">
+              <span>빌드 이름</span>
+              <input id="f-name" type="text" placeholder="예: TvZ 리퍼 앞마당" />
+            </label>
+            <label class="field">
+              <span>내 종족</span>
+              <select id="f-race">
+                <option value="">(없음)</option>
+                <option value="T">테란</option>
+                <option value="Z">저그</option>
+                <option value="P">프로토스</option>
+                <option value="R">랜덤</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>상대 종족</span>
+              <select id="f-vs">
+                <option value="*">아무 종족</option>
+                <option value="T">테란</option>
+                <option value="Z">저그</option>
+                <option value="P">프로토스</option>
+                <option value="R">랜덤</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="grid-4">
+            <label class="field">
+              <span>슬롯 (핫키)</span>
+              <select id="f-slot">
+                <option value="">(자동 배정)</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+              </select>
+            </label>
+            <label class="field span-2">
+              <span>메모</span>
+              <input id="f-notes" type="text" placeholder="선택 사항" />
+            </label>
+            <label class="field">
+              <span>파일 이름</span>
+              <input id="f-filename" type="text" placeholder="자동" />
+            </label>
+          </div>
+        </section>
+
+        <section class="card steps-card">
+          <div class="card-head">
+            <h2>단계</h2>
+            <div class="card-head-actions">
+              <span id="clock-chip" class="chip">SC2 대기 중</span>
+              <button id="add-at-clock" type="button" disabled>현재 시각으로 추가</button>
+              <button id="sort-steps" type="button">시간순 정렬</button>
+              <button id="add-step" type="button" class="primary">+ 단계</button>
+            </div>
+          </div>
+
+          <div class="table">
+            <div class="thead">
+              <span>시간</span>
+              <span>인구수</span>
+              <span>행동</span>
+              <span>메모</span>
+              <span></span>
+            </div>
+            <div id="rows" class="tbody"></div>
+          </div>
+          <p id="steps-empty" class="empty">
+            단계가 없습니다. <strong>+ 단계</strong> 를 누르거나, 아래에서 기존 텍스트를 붙여넣으세요.
+          </p>
+          <p id="order-warning" class="warn"></p>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>미리보기</h2>
+            <span class="muted" id="preview-meta"></span>
+          </div>
+          <pre id="preview" class="preview"></pre>
+          <p id="problems" class="warn"></p>
+        </section>
+
+        <section class="card">
+          <details id="import-panel">
+            <summary>가져오기 — JSON 익스포트 / 텍스트</summary>
+
+            <div class="import-head">
+              <button id="open-export" type="button" class="primary">JSON 열기…</button>
+              <span id="export-source" class="muted small"></span>
+            </div>
+
+            <div id="branch-box" hidden>
+              <p class="muted small">
+                분기를 고르세요. 승률·표본은 사이트 데이터이고, 메인이 항상 최선은 아닙니다.
+              </p>
+              <ul id="branch-list" class="branch-list"></ul>
+
+              <div class="import-opts">
+                <label class="check">
+                  <input id="imp-notes" type="checkbox" />
+                  <span>사이트 메모 포함 (영어 문장)</span>
+                </label>
+                <label class="check">
+                  <input id="imp-situational" type="checkbox" checked />
+                  <span>상황부 단계 포함</span>
+                </label>
+                <label class="check">
+                  <input id="imp-filler" type="checkbox" />
+                  <span>반복 생산 완전 제외</span>
+                </label>
+              </div>
+              <p id="import-report" class="warn"></p>
+            </div>
+
+            <hr class="import-rule" />
+
+            <p class="muted small">
+              이 앱 포맷으로 된 텍스트를 붙여넣어도 됩니다. 현재 편집 중인 내용은
+              덮어써집니다.
+            </p>
+            <textarea id="import-text" rows="6" placeholder="name: ...&#10;race: T&#10;&#10;0:12  @14  보급고"></textarea>
+            <div class="row-end">
+              <button id="do-import" type="button">텍스트 가져오기</button>
+            </div>
+          </details>
+        </section>
+      </main>
+    </div>
+
+    <footer class="footer">
+      <span id="status" class="status"></span>
+      <div class="footer-actions">
+        <button id="delete-build" type="button" class="danger" disabled>삭제</button>
+        <button id="save-build" type="button" class="primary">저장</button>
+      </div>
+    </footer>
+
+    <script src="editor.js"></script>
+  </body>
+</html>

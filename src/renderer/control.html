@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>SC2 Build Overlay</title>
+    <link rel="stylesheet" href="control.css" />
+  </head>
+  <body>
+    <header class="run">
+      <div class="run-state">
+        <span id="run-dot" class="dot"></span>
+        <div>
+          <strong id="run-label">정지됨</strong>
+          <span id="run-detail" class="muted small">시작을 누르면 SC2 를 읽습니다</span>
+        </div>
+      </div>
+      <button id="run-toggle" type="button" class="primary big">▶ 시작</button>
+    </header>
+
+    <main class="body">
+      <p id="mock-banner" class="mock-banner" hidden>
+        <strong>MOCK 모드</strong> — 가짜 데이터. 실제 사용은 <code>npm start</code>
+      </p>
+
+      <section class="card">
+        <h2>상태</h2>
+        <dl class="status-grid">
+          <dt>SC2 클라이언트</dt>
+          <dd id="s-client">—</dd>
+          <dt>게임</dt>
+          <dd id="s-game">—</dd>
+          <dt>시계</dt>
+          <dd id="s-clock">—</dd>
+          <dt>다음 단계</dt>
+          <dd id="s-next">—</dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>빌드</h2>
+          <div class="head-actions">
+            <button id="reload" type="button">다시 읽기</button>
+            <button id="open-editor" type="button">편집기…</button>
+          </div>
+        </div>
+        <ul id="build-list" class="build-list"></ul>
+        <p id="build-empty" class="muted small">
+          빌드가 없습니다. <strong>편집기…</strong> 로 만드세요.
+        </p>
+        <label class="check">
+          <input id="auto-pick" type="checkbox" />
+          <span>종족 매치업으로 자동 선택 (★ 우선)</span>
+        </label>
+        <p id="build-problems" class="warn"></p>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>오버레이</h2>
+          <div class="head-actions">
+            <button id="toggle-visible" type="button" disabled>숨기기</button>
+            <button id="toggle-locked" type="button" disabled>잠금 해제</button>
+          </div>
+        </div>
+
+        <div class="mode-row">
+          <span class="muted small">진행 방식</span>
+          <div class="segmented">
+            <button id="mode-auto" type="button" class="seg">자동 (시계)</button>
+            <button id="mode-manual" type="button" class="seg">수동 (핫키)</button>
+          </div>
+        </div>
+        <p class="muted small">
+          수동은 <code>Ctrl+Alt+←/→</code> 로 넘깁니다.
+        </p>
+
+        <label class="field">
+          <span>미리 알림 <em id="lead-value">0초</em></span>
+          <input id="lead" type="range" min="0" max="15" step="1" />
+        </label>
+        <div class="mode-row">
+          <span class="muted small">아이콘</span>
+          <div class="segmented">
+            <button id="icons-none" type="button" class="seg">없음</button>
+            <button id="icons-small" type="button" class="seg">작게</button>
+            <button id="icons-large" type="button" class="seg">크게</button>
+          </div>
+        </div>
+        <p id="icons-hint" class="muted small">
+          단계 옆에 유닛·건물 그림을 함께 보여줍니다.
+        </p>
+        <div id="icons-fetch-row" class="field" hidden>
+          <span>그림 파일 <em id="icons-fetch-state"></em></span>
+          <button id="icons-fetch" type="button">그림 내려받기</button>
+        </div>
+
+        <label class="field">
+          <span>불투명도 <em id="opacity-value">90%</em></span>
+          <input id="opacity" type="range" min="0.3" max="1" step="0.05" />
+        </label>
+        <label class="field">
+          <span>크기 <em id="scale-value">100%</em></span>
+          <input id="scale" type="range" min="0.7" max="1.6" step="0.05" />
+        </label>
+        <label class="field">
+          <span>단계 글자 <em id="step-scale-value">100%</em></span>
+          <input id="step-scale" type="range" min="0.8" max="1.8" step="0.05" />
+        </label>
+        <label class="field">
+          <span>가로 폭 <em id="width-scale-value">100%</em></span>
+          <input id="width-scale" type="range" min="0.7" max="1.8" step="0.05" />
+        </label>
+        <p class="muted small">
+          <strong>크기</strong> 는 창 전체를, <strong>단계 글자</strong> 는 빌드 목록만
+          키웁니다. 목록만 키우면 창 폭은 그대로라 긴 단계가 <code>…</code> 로 잘리니,
+          그때 <strong>가로 폭</strong> 으로 넓히세요.
+        </p>
+        <div class="two">
+          <label class="field">
+            <span>지난 단계 표시</span>
+            <input id="lookbehind" type="number" min="0" max="5" step="1" />
+          </label>
+          <label class="field">
+            <span>다음 단계 표시</span>
+            <input id="lookahead" type="number" min="1" max="15" step="1" />
+          </label>
+        </div>
+
+        <div class="field">
+          <span>위치</span>
+          <div class="corners">
+            <button id="pos-tl" type="button" disabled>↖ 좌상</button>
+            <button id="pos-tr" type="button" disabled>↗ 우상</button>
+            <button id="pos-bl" type="button" disabled>↙ 좌하</button>
+            <button id="pos-br" type="button" disabled>↘ 우하</button>
+          </div>
+        </div>
+        <p class="muted small">
+          직접 끌려면 <code>Ctrl+Alt+L</code> 로 잠금 해제 후 헤더를 드래그.
+        </p>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>효과음</h2>
+          <button id="test-sound" type="button">소리 확인</button>
+        </div>
+        <label class="check">
+          <input id="sound-enabled" type="checkbox" />
+          <span>단계가 넘어갈 때 소리로 알림</span>
+        </label>
+        <label class="field">
+          <span>볼륨 <em id="sound-volume-value">50%</em></span>
+          <input id="sound-volume" type="range" min="0" max="1" step="0.05" />
+        </label>
+
+        <div class="field">
+          <span>소리 <em id="sound-file">기본 내장음</em></span>
+          <div class="corners">
+            <button id="sound-pick" type="button">불러오기…</button>
+            <button id="sound-default" type="button" disabled>기본음으로</button>
+          </div>
+        </div>
+        <p id="sound-problem" class="warn"></p>
+
+        <p class="muted small">
+          자동 모드에서 단계가 넘어갈 때만 울립니다. 짧은 소리가 좋습니다 —
+          WAV · MP3 · OGG · M4A · FLAC, 5MB 까지.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>설정</h2>
+        <label class="field">
+          <span>내 플레이어 이름</span>
+          <input id="my-name" type="text" placeholder="아래에 표시된 이름을 그대로" />
+        </label>
+        <p id="players-hint" class="players-hint">
+          게임에 들어가면 SC2 가 알려주는 플레이어 이름이 여기 표시됩니다.
+        </p>
+        <p class="muted small">매치업 자동 선택용.</p>
+        <label class="check">
+          <input id="auto-start-game" type="checkbox" />
+          <span>게임이 시작되면 자동으로 시작</span>
+        </label>
+        <label class="check">
+          <input id="auto-start" type="checkbox" />
+          <span>앱을 열면 바로 시작</span>
+        </label>
+      </section>
+
+      <section class="card">
+        <details class="keys-panel">
+          <summary>핫키</summary>
+          <ul class="keys">
+            <li><kbd>Ctrl+Alt+S</kbd><span>시작 / 정지</span></li>
+            <li><kbd>Ctrl+Alt+1~9</kbd><span>슬롯 빌드 불러오기</span></li>
+            <li><kbd>Ctrl+Alt+O</kbd><span>오버레이 표시 / 숨김</span></li>
+            <li><kbd>Ctrl+Alt+L</kbd><span>잠금 해제 (끌어서 이동)</span></li>
+            <li><kbd>Ctrl+Alt+M</kbd><span>자동 / 수동 모드</span></li>
+            <li><kbd>Ctrl+Alt+←/→</kbd><span>수동으로 단계 이동</span></li>
+            <li><kbd>Ctrl+Alt+C</kbd><span>이 제어창 열기</span></li>
+            <li><kbd>Ctrl+Alt+E</kbd><span>빌드오더 편집기</span></li>
+            <li><kbd>Ctrl+Alt+R</kbd><span>빌드 다시 읽기</span></li>
+            <li><kbd>Ctrl+Alt+Q</kbd><span>앱 종료</span></li>
+          </ul>
+        </details>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span class="muted small">창을 닫아도 트레이에 남습니다</span>
+      <div class="footer-actions">
+        <button id="open-dir" type="button">빌드 폴더</button>
+        <button id="quit" type="button" class="danger">종료</button>
+      </div>
+    </footer>
+
+    <script src="control.js"></script>
+  </body>
+</html>

@@ -18,15 +18,23 @@
   /* Set from the 단계 글자 setting. Declared here so the stylesheet renders on
      its own, outside the app, at the size it ships with. */
   --step-scale: 1;
-  --bg: rgba(10, 13, 20, 0.82);
-  --edge: rgba(255, 255, 255, 0.07);
+
   --text: #f2f5fa;
-  --dim: #8894a8;
+  --dim: #7d8da3;
   /* Pulled down off --text so the action reads first and the number second;
      still well clear of --dim, which is reference-only. */
-  --supply: #b4c2d6;
+  --supply: #e4ecf7;
+
+  /* The HUD palette. Blue carries structure — frames, rules, times, numbers —
+     and gold is spent only on the one row being acted on, so that the eye lands
+     there before it reads anything. */
+  --hud-edge: rgba(96, 166, 224, 0.66);
+  --hud-line: rgba(86, 152, 210, 0.28);
+  --hud-fill: rgba(20, 52, 90, 0.5);
+  --hud-text: #6fa8d6;
+
   --accent: #ffc24a;
-  --accent-soft: rgba(255, 194, 74, 0.11);
+  --accent-soft: rgba(255, 194, 74, 0.1);
   --now: #6fe38a;
   --danger: #ff7b72;
 }
@@ -54,92 +62,86 @@ body {
   color: var(--text);
 }
 
-/* No drop shadow. The window is sized to its content, so anything drawn
-   outside the border box lands on the game itself rather than on a surface
-   the panel sits on — over a bright screen it reads as a grey smear around
-   the overlay. The panel ends at its own background; the hairline below is
-   what separates it from the terrain. */
+/* ---------- panel ---------- */
+
+/* Cut corners rather than rounded ones, and the frame line carried in the
+   panel's own background: `.panel` is filled edge to edge with the edge colour
+   and the fill layer below covers all but a hairline of it. A `border` cannot
+   do this, because a border is drawn outside the clip path and would be sliced
+   off at the four cuts.
+
+   No drop shadow, and the glow is thrown inward. The window is sized to its
+   content, so anything drawn outside the border box lands on the game itself —
+   over a bright screen an outer glow reads as a grey smear around the panel. */
 .panel {
+  /* Measured off the reference: on a 1330px panel the frame is ~3px and the
+     corner cut ~24px — 0.23% and 1.8% of the width. At the 430px this actually
+     runs at, that is a hairline and an 8px cut. Scaled up from there the frame
+     stops reading as a lit edge and starts reading as a thick outline, which is
+     what made the panel look coarse. Fine lines, generous space. */
+  --chamfer: 8px;
+  --frame: 1px;
   position: relative;
   display: flex;
   flex-direction: column;
-  border-radius: 15px;
-  overflow: hidden;
+  /* Brightest along the top-left run and falling off, so the frame reads as lit
+     from one side rather than as a uniform outline drawn around a box. */
+  background: linear-gradient(145deg, var(--hud-edge), rgba(80, 142, 198, 0.5) 55%, rgba(74, 132, 186, 0.56));
+  clip-path: polygon(
+    var(--chamfer) 0,
+    calc(100% - var(--chamfer)) 0,
+    100% var(--chamfer),
+    100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%,
+    var(--chamfer) 100%,
+    0 calc(100% - var(--chamfer)),
+    0 var(--chamfer)
+  );
   /* A hairline dark outline keeps light text readable over bright terrain. */
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
-/* The glass: background wash and the blurred backdrop behind it.
+/* The fill, inset by the frame width and cut to the same shape.
 
-   This lives on a child rather than on .panel itself because Chromium can
-   apply an element's own `backdrop-filter` to its square border box instead of
-   its rounded one, which leaves the four corner wedges outside the radius
-   tinted rather than clear — the panel then reads as a rectangle with a
-   rounded shape drawn on it. Filtering a child and letting the parent's
-   `overflow: hidden` cut it to the radius is clipping Chromium gets right.
-
-   Invisible while the filter was blur-only; the moment the filter started
-   darkening and desaturating, the corners gave it away. */
+   Opaque rather than glass. The old panel blurred the game behind it, which
+   cost a composited layer, a `backdrop-filter` that Chromium clips to the
+   square border box instead of the shape, and a tint that changed with the
+   map. A HUD reads better solid, and 불투명도 still thins the whole panel. */
 .panel::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: var(--frame);
   z-index: 0;
+  clip-path: polygon(
+    calc(var(--chamfer) - var(--frame)) 0,
+    calc(100% - var(--chamfer) + var(--frame)) 0,
+    100% calc(var(--chamfer) - var(--frame)),
+    100% calc(100% - var(--chamfer) + var(--frame)),
+    calc(100% - var(--chamfer) + var(--frame)) 100%,
+    calc(var(--chamfer) - var(--frame)) 100%,
+    0 calc(100% - var(--chamfer) + var(--frame)),
+    0 calc(var(--chamfer) - var(--frame))
+  );
   background:
-    /* Light entering the top edge, falling off fast: it gives the surface
-       somewhere for the light to come from, which a flat fill only implies. */
-    radial-gradient(125% 85% at 50% -12%, rgba(255, 255, 255, 0.055), transparent 62%),
-    linear-gradient(180deg, rgba(19, 24, 34, 0.82) 0%, rgba(12, 16, 23, 0.86) 45%, rgba(9, 12, 18, 0.89) 100%);
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.45);
-  /* Desaturated and darkened, not saturated. Saturating pulls the map's colour
-     through the glass, so the panel goes warm on a desert and cold on ice; the
-     overlay should look the same on every map. */
-  backdrop-filter: blur(22px) saturate(0.7) brightness(0.82);
-  /* A layer with backdrop-filter is composited, and a composited descendant
-     can escape an ancestor's rounded overflow clip. Clipping it to the same
-     shape itself costs nothing and closes that off. */
-  border-radius: inherit;
-  clip-path: inset(0 round 15px);
+    /* Scanlines, at the threshold of visible. They give the fill a surface to
+       be, which a flat gradient only implies — and at 2% they cannot compete
+       with the type sitting on them. */
+    repeating-linear-gradient(180deg, rgba(150, 200, 240, 0.016) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 80% at 50% -12%, rgba(92, 158, 214, 0.12), transparent 62%),
+    linear-gradient(180deg, #0f2745 0%, #0a1a30 52%, #061020 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(126, 176, 220, 0.16),
+    inset 0 0 30px rgba(30, 84, 142, 0.24);
   pointer-events: none;
 }
 
-/* Above the glass layer. Without this the ::after, being last in paint order,
-   would cover the rows it is supposed to sit behind. */
+/* Above the fill. Without this the ::after, being last in paint order, would
+   cover the rows it is supposed to sit behind. */
 .header,
 .steps,
 .footer {
   position: relative;
   z-index: 1;
-}
-
-/* The edge hairline, painted as a masked ring rather than a border so it can
-   carry a gradient — `border` takes one flat colour, and nothing real is lit
-   evenly on all four sides. Brightest where light would fall, gone by the
-   middle, faintly back at the bottom as bounce.
-
-   It sits above the rows, but it is 1px at the very edge and they are inset
-   well clear of it. */
-.panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    155deg,
-    rgba(255, 255, 255, 0.2) 0%,
-    rgba(255, 255, 255, 0.07) 28%,
-    rgba(255, 255, 255, 0.025) 55%,
-    rgba(255, 255, 255, 0.05) 82%,
-    rgba(255, 255, 255, 0.11) 100%
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
 }
 
 /* ---------- header ---------- */
@@ -149,8 +151,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.7rem 0.85rem 0.55rem;
+  gap: 0.6rem;
+  padding: 0.75rem 0.85rem 0.7rem;
+  background: linear-gradient(180deg, rgba(32, 74, 122, 0.34), rgba(18, 46, 82, 0.1));
 }
 
 /* A flat 1px rule reads as a table border. One that fades at both ends divides
@@ -159,14 +162,14 @@ body {
 .footer::before {
   content: '';
   position: absolute;
-  left: 0.75rem;
-  right: 0.75rem;
+  left: 0.7rem;
+  right: 0.7rem;
   height: 1px;
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.1) 12%,
-    rgba(255, 255, 255, 0.1) 88%,
+    rgba(96, 166, 224, 0.4) 10%,
+    rgba(96, 166, 224, 0.4) 90%,
     transparent
   );
 }
@@ -190,39 +193,35 @@ body {
 
 .build-name {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.35rem;
-  font-size: 0.95rem;
-  font-weight: 650;
-  line-height: 1.25;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.2;
   min-width: 0;
 }
 
 #build-label {
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The Ctrl+Alt+N key that recalls this build. */
-/* Sized against the build name beside it: at 0.72rem it read as a footnote
-   next to the title rather than a label on it. */
+/* The Ctrl+Alt+N key that recalls this build. Squared off and filled, so it
+   reads as a key cap rather than as part of the title. */
 .slot {
   flex: none;
   display: none;
-  min-width: 1.3rem;
-  padding: 0 0.25rem;
-  border-radius: 5px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.82rem;
-  font-weight: 700;
-  line-height: 1.35;
+  min-width: 1.15rem;
+  padding: 0.05rem 0.22rem;
+  background: var(--accent);
+  color: #211602;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.3;
   text-align: center;
   text-shadow: none;
+  clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px);
 }
 
 .slot.shown {
@@ -236,10 +235,10 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 2;
-  padding: 0.5rem 0.75rem;
-  background: rgba(255, 196, 77, 0.92);
-  color: #171100;
+  z-index: 3;
+  padding: 0.5rem 0.8rem;
+  background: var(--accent);
+  color: #211602;
   font-size: 0.85rem;
   font-weight: 700;
   text-align: center;
@@ -258,37 +257,44 @@ body {
   transform: translateY(0);
 }
 
-/* Reference, not headline. */
 .matchup {
   display: block;
-  margin-top: 0.1rem;
+  margin-top: 0.15rem;
   font-size: 0.68rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--dim);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--hud-text);
   text-transform: uppercase;
+  opacity: 0.85;
 }
 
+/* No frame around the clock. Size alone makes it findable — it is the largest
+   thing in the header — and a box around it was one more outline competing with
+   the panel's own. */
 .clock-wrap {
+  flex: none;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.2rem;
-  flex: none;
+  gap: 0.1rem;
 }
 
 .clock {
   font-variant-numeric: tabular-nums;
-  font-size: 1.3rem;
-  font-weight: 550;
+  font-size: 1.6rem;
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--text);
+  letter-spacing: 0.005em;
+  /* The reading everything else is measured against, so it gets the one light
+     source on the panel. The dark hairline underneath stays — the glow is what
+     makes it carry, the shadow is what keeps it legible over bright terrain. */
+  text-shadow: 0 0 14px rgba(104, 176, 232, 0.42), 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .badges {
   display: flex;
-  gap: 0.25rem;
+  gap: 0.2rem;
+  margin-top: 0.15rem;
 }
 
 /* With no badge to show, do not leave the clock sitting on dead space. */
@@ -297,10 +303,9 @@ body {
 }
 
 .badge {
-  padding: 0.05rem 0.3rem;
-  border-radius: 4px;
+  padding: 0.05rem 0.28rem;
   background: rgba(255, 255, 255, 0.1);
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -308,7 +313,7 @@ body {
 }
 
 .badge.manual {
-  background: rgba(255, 196, 77, 0.22);
+  background: rgba(255, 194, 74, 0.22);
   color: var(--accent);
 }
 
@@ -322,7 +327,10 @@ body {
 .steps {
   flex: none;
   list-style: none;
-  padding: 0.35rem 0;
+  padding: 0.45rem 0.6rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
 }
 
 /* The step list carries a second size axis on top of the panel-wide 크기: the
@@ -333,21 +341,57 @@ body {
    of a fixed 시간 column. They scale off `--step-scale` directly rather than
    off each row's own font-size: `.step.next` is set in a larger type, and
    em-based columns would make that one row's grid wider than the rest and break
-   the alignment the list is read by.
-
-   The horizontal padding stays fixed — it lines the list up with the header and
-   footer, which are not on this axis. */
+   the alignment the list is read by. */
 .step {
   display: grid;
   grid-template-columns:
-    calc(2.9rem * var(--step-scale)) calc(2.5rem * var(--step-scale)) 1fr auto;
-  align-items: baseline;
+    calc(1.4rem * var(--step-scale))
+    calc(2.7rem * var(--step-scale))
+    calc(2.2rem * var(--step-scale))
+    1fr
+    auto;
+  align-items: center;
   gap: calc(0.4rem * var(--step-scale));
   /* `position: relative` so the imminent row can carry its pulsing rail. */
   position: relative;
-  padding: calc(0.3rem * var(--step-scale)) 0.75rem;
-  font-size: calc(0.88rem * var(--step-scale));
-  line-height: 1.35;
+  padding: calc(0.4rem * var(--step-scale)) 0.5rem;
+  font-size: calc(0.9rem * var(--step-scale));
+  line-height: 1.3;
+  border: 1px solid rgba(88, 156, 214, 0.22);
+  background: linear-gradient(180deg, rgba(26, 60, 102, 0.42), rgba(14, 36, 66, 0.3));
+  border-radius: 4px;
+}
+
+/* Its position in the build. Ringed rather than bare so the column reads as a
+   sequence, which is the one thing a plain number in a row does not say. */
+.step .num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(1.4rem * var(--step-scale));
+  height: calc(1.4rem * var(--step-scale));
+  border: 1px solid rgba(96, 166, 224, 0.36);
+  border-radius: 50%;
+  background: rgba(20, 52, 90, 0.45);
+  font-size: calc(0.74rem * var(--step-scale));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--hud-text);
+  text-shadow: none;
+}
+
+.step .at {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--hud-text);
+  text-align: right;
+}
+
+.step .supply {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--supply);
+  text-align: right;
 }
 
 /* Icon column. The width is fixed rather than fitted to the row's contents so
@@ -359,6 +403,18 @@ body {
   justify-content: center;
   width: var(--icon-size);
   height: var(--icon-size);
+  border: 1px solid rgba(96, 166, 224, 0.3);
+  background: rgba(5, 14, 26, 0.55);
+  border-radius: 3px;
+  /* Recessed, so the art sits in a slot rather than on top of the row. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), inset 0 0 8px rgba(0, 0, 0, 0.45);
+}
+
+.step .icon:empty {
+  /* Nothing recognised in this step. An empty frame would read as a missing
+     picture; the column still holds its place so the text stays aligned. */
+  border-color: transparent;
+  background: none;
 }
 
 .step .icon img {
@@ -366,7 +422,7 @@ body {
   width: 100%;
   height: 100%;
   /* The button art is a square with its own border; rounding the corners
-     slightly keeps it from fighting the panel's own edges. Done steps need no
+     slightly keeps it from fighting the frame around it. Done steps need no
      rule of their own — `.step.done` already fades the whole row. */
   border-radius: 2px;
 }
@@ -376,8 +432,12 @@ body {
    the window (`ICON_COLUMN`). Scaling them here would put the two out of step. */
 body.icons-small .step {
   grid-template-columns:
-    calc(2.9rem * var(--step-scale)) calc(2.5rem * var(--step-scale)) var(--icon-size) 1fr auto;
-  align-items: center;
+    calc(1.4rem * var(--step-scale))
+    calc(2.7rem * var(--step-scale))
+    calc(2.2rem * var(--step-scale))
+    var(--icon-size)
+    1fr
+    auto;
   --icon-size: 1.15rem;
 }
 
@@ -385,169 +445,295 @@ body.icons-small .step {
    than scanning. The text stays — the picture says what, the text says how many. */
 body.icons-large .step {
   grid-template-columns:
-    calc(2.9rem * var(--step-scale)) calc(2.5rem * var(--step-scale)) var(--icon-size) 1fr auto;
-  align-items: center;
+    calc(1.4rem * var(--step-scale))
+    calc(2.7rem * var(--step-scale))
+    calc(2.2rem * var(--step-scale))
+    var(--icon-size)
+    1fr
+    auto;
   --icon-size: 2.5rem;
   padding-top: calc(0.3rem * var(--step-scale));
   padding-bottom: calc(0.3rem * var(--step-scale));
   font-size: calc(0.95rem * var(--step-scale));
 }
 
-.step.next .icon img {
-  /* The current step already has a background and a brighter label. A ring here
-     ties the picture to it without adding another colour. */
-  box-shadow: 0 0 0 1px var(--accent);
-}
-
-.step .at {
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  color: var(--dim);
-  text-align: right;
-}
-
-.step .supply {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--supply);
-  /* Centred, not right-aligned. Supply reads as a tag on the row rather than a
-     running scale the way the clock does, and hard against the action text it
-     looked crowded to the right. The cost is that 2- and 3-digit values no
-     longer line up on the units column; tabular figures keep the drift to half
-     a digit either side. */
-  text-align: center;
-}
-
-/* Breathing room between the picture and its label. The row's own 0.4rem gap
-   is enough between two numbers but not after a 2.5rem image, which ends up
-   almost touching the word it belongs to.
-
-   Deliberately not scaled by --step-scale: it is paid for by the window width
-   the main process adds for the icon column (ICON_COLUMN), and that is figured
-   off the 크기 setting alone. Scaling it here would put the two out of step. */
-body.icons-small .step .action,
-body.icons-large .step .action {
-  padding-left: 0.3rem;
-}
-
 .step .action {
-  font-weight: 450;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
 }
 
 .step .note {
   display: block;
-  font-size: calc(0.72rem * var(--step-scale));
+  font-size: 0.72em;
+  font-weight: 400;
   color: var(--dim);
   white-space: normal;
 }
 
 .step .until {
   font-variant-numeric: tabular-nums;
-  /* Close to the step text rather than well under it. This is the one number
-     being watched in the seconds before a step is due, so it has to read at a
-     glance from across the desk; the countdown only ever renders on the current
-     row, so the width it takes back from the action column costs one line. */
-  font-size: calc(0.82rem * var(--step-scale));
-  font-weight: 600;
+  font-size: 0.74em;
+  font-weight: 700;
   color: var(--dim);
 }
 
-/* Faded, not struck through: the strikethrough was saying the same thing as
-   the opacity and made the words harder to read on the way past. Done steps
-   still have to be readable enough to count your place by. */
+/* ---------- step states ---------- */
+
+/* Struck out and unboxed. A faded box still reads as one more thing on the
+   panel, and what is already done is only there for orientation. */
 .step.done {
-  opacity: 0.3;
+  opacity: 0.34;
+  border-color: transparent;
+  background: none;
 }
 
-/* A rail down the left instead of a filled block: it marks the row without
-   putting a coloured rectangle between the eye and the words. The rail is part
-   of the box, so its width comes back out of the left padding — otherwise this
-   row's columns sit 3px right of every other row. */
+.step.done .num,
+.step.done .icon {
+  border-color: transparent;
+  background: none;
+}
+
+.step.done .action {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* The one row being acted on. Everything else on the panel is blue, so gold
+   here is the only place the eye has to go. */
+/* The row being acted on, as a band that runs the full width of the panel and
+   tapers at both ends the way the order runs.
+
+   The outline is the row's own background and the dark interior is a layer
+   inset by 1px over it — the same trick the panel uses, and for the same
+   reason: a `border` is drawn outside the clip path and the tapered ends would
+   slice it off, leaving the arrows unoutlined.
+
+   The negative margin and the matching extra padding cancel out, so the band is
+   wider than the rows below it while its content still starts at exactly the
+   same x. Nothing in the row moves; only the frame around it grows. */
 .step.next {
-  background: linear-gradient(90deg, var(--accent-soft), transparent 65%);
-  border-left: 3px solid var(--accent);
-  box-shadow: inset 2px 0 8px -4px var(--accent);
-  margin: 0.12rem 0;
-  padding-inline: 0.75rem;
-  padding-left: calc(0.75rem - 3px);
-  font-size: calc(0.98rem * var(--step-scale));
-  font-weight: 600;
+  --taper: 9px;
+  margin: 0 -0.6rem;
+  padding-left: calc(0.5rem + 0.6rem);
+  padding-right: calc(0.5rem + 0.6rem);
+  border: 0;
+  border-radius: 0;
+  background: var(--accent);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--taper)) 0,
+    100% 50%,
+    calc(100% - var(--taper)) 100%,
+    0 100%
+  );
 }
 
-.step.next .at,
-.step.next .until {
+.step.next::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--taper)) 0,
+    100% 50%,
+    calc(100% - var(--taper)) 100%,
+    0 100%
+  );
+  /* Dark inside, gold only on the line and the type. Filling the band with gold
+     made it the loudest thing on screen; an outline says "here" just as clearly
+     and leaves the name the brightest thing in the row. */
+  background:
+    radial-gradient(120% 130% at 0% 50%, rgba(255, 194, 74, 0.13), transparent 62%),
+    linear-gradient(180deg, #142944 0%, #0b1526 100%);
+}
+
+/* A slow sheen crossing the band. The one moving thing on the panel, and it
+   moves under the type rather than over it — the row has to stay readable while
+   it passes. `--t` is the wall clock the row was built at, so the sweep carries
+   on across the four rebuilds a second instead of stuttering back to the start. */
+.step.next::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--taper)) 0,
+    100% 50%,
+    calc(100% - var(--taper)) 100%,
+    0 100%
+  );
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 226, 160, 0.16) 47%,
+    rgba(255, 226, 160, 0.16) 50%,
+    transparent 59%
+  );
+  background-size: 260% 100%;
+  background-repeat: no-repeat;
+  animation: band-sheen 4.2s linear infinite;
+  animation-delay: calc(var(--t, 0) * -1ms);
+  pointer-events: none;
+}
+
+@keyframes band-sheen {
+  from {
+    background-position: 170% 0;
+  }
+  to {
+    background-position: -70% 0;
+  }
+}
+
+/* Above both the fill and the sheen, which are painted after the row's own
+   background. */
+.step.next > * {
+  position: relative;
+}
+
+.step.next {
+  font-size: calc(1.02rem * var(--step-scale));
+  font-weight: 650;
+}
+
+.step.next .num {
+  border-color: rgba(255, 194, 74, 0.85);
+  background: var(--accent);
+  color: #211602;
+}
+
+.step.next .at {
   color: var(--accent);
+  text-shadow: 0 0 10px rgba(255, 194, 74, 0.45), 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
 .step.next .supply {
   color: var(--accent);
 }
 
-/* Pulsing the whole row's background makes the text flicker underneath it.
-   Pulsing the rail says the same thing and leaves the words alone. */
+.step.next .icon {
+  border-color: var(--accent);
+}
+
+/* The countdown, or why the row is lit when there is none to give — the clock
+   is parked, or the step is already due.
+
+   No frame of its own. The band is already outlined and the text is already
+   gold; a second box inside the first one was an outline around an outline.
+   It keeps the panel's dark hairline instead, which is what carries the type
+   now that there is no fill behind it. */
+.step.next .until.current {
+  color: var(--accent);
+  font-size: 0.82em;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+
+
 .step.imminent {
-  background: linear-gradient(90deg, rgba(111, 227, 138, 0.13), transparent 65%);
-  border-left-color: var(--now);
-  box-shadow: inset 2px 0 8px -4px var(--now);
+  background: var(--now);
+  animation: rail-pulse 1.1s ease-in-out infinite;
+  animation-delay: calc(var(--t, 0) * -1ms);
 }
 
 .step.imminent::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
+  background:
+    radial-gradient(120% 130% at 0% 50%, rgba(111, 227, 138, 0.14), transparent 62%),
+    linear-gradient(180deg, #103032 0%, #091b20 100%);
+}
+
+.step.imminent .num {
+  border-color: var(--now);
   background: var(--now);
-  animation: rail-pulse 1s ease-in-out infinite;
+  color: #05230f;
 }
 
 .step.imminent .at,
-.step.imminent .until {
+.step.imminent .supply {
   color: var(--now);
 }
 
+.step.imminent .icon {
+  border-color: var(--now);
+}
+
+.step.imminent .until.current {
+  color: var(--now);
+}
+
+/* The outline brightens and dims. The interior stays put — a pulsing fill
+   under the name would make the text harder to read exactly when it matters. */
 @keyframes rail-pulse {
   50% {
-    opacity: 0.35;
+    background: #b6f5c8;
   }
 }
 
+/* ---------- dividers ---------- */
+
+/* Splits the row being acted on from the ones coming. A label with a rule
+   running off it, rather than a full-width line, so it groups without boxing. */
+.up-next,
 .section-label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.75rem 0.2rem;
-  font-size: calc(0.62rem * var(--step-scale));
+  gap: 0.4rem;
+  padding: 0.28rem 0.5rem 0.1rem;
+  font-size: 0.64rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  color: #6f7b8e;
+  letter-spacing: 0.12em;
+  color: var(--hud-text);
   text-transform: uppercase;
+  opacity: 0.75;
 }
 
-/* The rule runs out from the label rather than the label floating above one. */
+.up-next::after,
 .section-label::after {
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--edge);
+  background: linear-gradient(90deg, var(--hud-line), transparent);
 }
 
+.up-next .marks {
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0;
+  color: var(--hud-edge);
+  opacity: 0.7;
+}
+
+.section-label {
+  color: var(--accent);
+  opacity: 0.6;
+}
+
+/* ---------- empty states ---------- */
+
 .empty {
-  padding: 1.25rem 0.85rem;
-  font-size: 0.85rem;
+  padding: 0.85rem 0.75rem;
   color: var(--dim);
+  font-size: 0.85rem;
+  line-height: 1.55;
   text-align: center;
-  line-height: 1.5;
 }
 
 .empty code {
-  color: var(--accent);
-  font-size: 0.8rem;
+  padding: 0.05rem 0.25rem;
+  background: var(--hud-fill);
+  color: var(--hud-text);
+  font-family: inherit;
+  font-size: 0.9em;
+  font-weight: 700;
+}
+
+.empty strong {
+  color: var(--text);
 }
 
 /* ---------- footer ---------- */
@@ -557,19 +743,57 @@ body.icons-large .step .action {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.45rem 0.85rem 0.5rem;
-  font-size: 0.7rem;
+  gap: 0.6rem;
+  padding: 0.4rem 0.8rem 0.45rem;
+  font-size: 0.66rem;
   color: var(--dim);
-  font-size: 0.7rem;
-  color: var(--dim);
+}
+
+.status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status.live {
   color: var(--now);
 }
 
+/* Pushed to the right so it sits with the corner ticks. With three children and
+   `space-between` the middle one lands in the centre of the panel, which reads
+   as a third column of status rather than as a note in the corner. */
 .hint {
   flex: none;
+  margin-left: auto;
   opacity: 0.75;
+}
+
+/* Three ticks in the corner. Pure trim, and the one place on the panel where
+   that is the point: it closes the frame off at the corner the footer text
+   leaves open. */
+.bars {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 0.55rem;
+}
+
+.bars::before,
+.bars::after {
+  content: '';
+  width: 3px;
+  background: var(--hud-edge);
+}
+
+.bars::before {
+  height: 55%;
+  opacity: 0.45;
+  box-shadow: 5px 0 0 rgba(96, 166, 224, 0.55);
+}
+
+.bars::after {
+  height: 100%;
+  margin-left: 5px;
+  opacity: 0.95;
 }

@@ -15,7 +15,12 @@ const { downloadIcons } = require('./icon-download');
 
 // Width at 100%; the panel is laid out in rem off one root font-size, so the
 // content width scales linearly with the 크기 setting.
-const BASE_WIDTH = 380;
+//
+// 410 rather than 380 because the step row gained a 단계 번호 column and the
+// list gained its own side padding. Those come out of the action column, and
+// the action text is the thing that must not be cut, so the window takes the
+// difference instead.
+const BASE_WIDTH = 410;
 const WIN_HEIGHT = 560;
 const MIN_HEIGHT = 80;
 
@@ -180,8 +185,9 @@ function createOverlay() {
     show: false, // stays hidden until 시작
     frame: false,
     transparent: true,
-    // Resized programmatically to fit the rendered panel. The user cannot drag
-    // an edge anyway: the window is frameless and click-through.
+    // Sized programmatically to fit the rendered panel, and draggable by the
+    // edge once unlocked — a width drag is turned into the 가로 폭 setting by
+    // the resize handler below, so it sticks instead of snapping back.
     resizable: true,
     movable: true,
     minimizable: false,
@@ -206,6 +212,12 @@ function createOverlay() {
   overlay.setIgnoreMouseEvents(true, { forward: true });
   overlay.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   overlay.on('moved', () => config.set('bounds', overlay.getBounds()));
+  // Both events, debounced. `resized` alone would have been tidier, but on
+  // Windows it only fires when the modal sizing loop ends, so a size change
+  // that arrives any other way never reaches it. `resize` fires for all of
+  // them; waiting for it to go quiet is what keeps us off the moving edge.
+  overlay.on('resize', queueResize);
+  overlay.on('resized', queueResize);
   overlay.webContents.on('did-finish-load', () => {
     push();
     // The overlay decodes it once and keeps it; a reload starts that over.
@@ -603,6 +615,9 @@ function moveOverlay(where) {
 }
 
 let lastContentHeight = WIN_HEIGHT;
+/* The width this process last set. A `resized` event carrying it is our own
+   change coming back, not the user dragging an edge. */
+let appliedWidth = null;
 
 /**
  * The icon column plus its gap, in px at 100%. Matches `--icon-size` in
@@ -610,11 +625,11 @@ let lastContentHeight = WIN_HEIGHT;
  * so switching icons on does not start truncating step text.
  */
 const ICON_GAP = 0.4 * 15; // .step's column gap
-const ICON_LEAD = 0.3 * 15; // the extra space before the action text
 const ICON_COLUMN = {
   none: 0,
-  small: 1.15 * 15 + ICON_GAP + ICON_LEAD,
-  large: 2.5 * 15 + ICON_GAP + ICON_LEAD,
+  // The column plus the one gap it adds. Matches `--icon-size` in overlay.css.
+  small: 1.15 * 15 + ICON_GAP,
+  large: 2.5 * 15 + ICON_GAP,
 };
 
 function overlayWidth() {
@@ -661,8 +676,46 @@ function fitOverlay(contentHeight) {
   x = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - width));
   y = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - height));
 
+  appliedWidth = width;
   overlay.setBounds({ x, y, width, height });
   config.set('bounds', overlay.getBounds());
+}
+
+const WIDTH_SCALE = { min: 0.7, max: 1.8 }; // the 가로 폭 slider's range
+
+/**
+ * Turns a drag on the window's edge into the 가로 폭 setting.
+ *
+ * Both of the overlay's dimensions are derived — the width from 크기 and 가로 폭,
+ * the height from what the renderer actually drew — so a dragged edge used to
+ * be undone by the next fit, and the control window never heard about it. The
+ * drag now sets the setting it was really asking for, which is what makes it
+ * stick and show up on the slider.
+ *
+ * Height cannot work the same way: there is no setting behind it, only the
+ * rendered content. A vertical drag is put back where it belongs.
+ */
+let resizeTimer = null;
+
+/** Waits for the drag to stop before reading the width back. */
+function queueResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(adoptResize, 220);
+}
+
+function adoptResize() {
+  if (!overlay || overlay.isDestroyed()) return;
+  const { width } = overlay.getBounds();
+  if (width === appliedWidth) return; // our own resize echoing back
+
+  const scale = Number(config.get('scale')) || 1;
+  const base = (BASE_WIDTH + (ICON_COLUMN[config.get('iconMode')] || 0)) * scale;
+  const next = Math.min(WIDTH_SCALE.max, Math.max(WIDTH_SCALE.min, width / base));
+  // Rounded to the slider's step so the number the user sees is one it can hold.
+  config.set('widthScale', Math.round(next * 20) / 20);
+
+  fitOverlay(lastContentHeight);
+  push();
 }
 
 function showOverlay() {

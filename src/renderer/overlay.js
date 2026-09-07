@@ -81,6 +81,15 @@ function renderSteps(view) {
     li.className = 'step';
     if (i < nextIndex) li.classList.add('done');
 
+    /* The list is rebuilt on every push, four times a second, so a CSS
+       animation on a row restarts before it gets anywhere — the imminent pulse
+       only ever played its first 250ms and so never actually pulsed.
+       Handing each row the current time as a negative animation-delay puts the
+       new element at the phase the old one had reached, and the animation reads
+       as continuous across the rebuilds. Pseudo-elements inherit the property,
+       so the band's sheen rides on the same clock. */
+    li.style.setProperty('--t', String(Math.round(performance.now())));
+
     const until = step.at - clock;
     if (i === nextIndex) {
       li.classList.add('next');
@@ -89,6 +98,12 @@ function renderSteps(view) {
       const live = view.running && view.game.inGame && ui.mode === 'auto';
       if (live && until <= IMMINENT_SECONDS) li.classList.add('imminent');
     }
+
+    // Where this step falls in the build. Reading "3" against a 55-step order
+    // is how you know whether you are early or already deep into it.
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = i + 1;
 
     const at = document.createElement('span');
     at.className = 'at';
@@ -127,12 +142,35 @@ function renderSteps(view) {
 
     const untilEl = document.createElement('span');
     untilEl.className = 'until';
-    if (i === nextIndex && ui.mode === 'auto' && view.game.inGame && until > 0) {
-      untilEl.textContent = `-${formatTime(until)}`;
+    if (i === nextIndex) {
+      const counting = ui.mode === 'auto' && view.game.inGame && until > 0;
+      // No countdown to give when the clock is parked or the step is already
+      // due, and saying so beats leaving the highlight unexplained.
+      untilEl.textContent = counting ? `-${formatTime(until)}` : '현재 진행중';
+      untilEl.classList.add('current');
     }
 
-    li.append(...(iconCell ? [at, supply, iconCell, action, untilEl] : [at, supply, action, untilEl]));
+    li.append(
+      ...(iconCell
+        ? [num, at, supply, iconCell, action, untilEl]
+        : [num, at, supply, action, untilEl])
+    );
     el.steps.append(li);
+
+    // Splits what you are doing now from what is coming, once per render.
+    if (i === nextIndex && i + 1 < end) {
+      const divider = document.createElement('li');
+      divider.className = 'up-next';
+      const label = document.createElement('span');
+      label.textContent = '다음 단계';
+      // Its own element rather than a pseudo: the rule that runs off the label
+      // already uses ::after, and the marks belong between the two.
+      const marks = document.createElement('i');
+      marks.className = 'marks';
+      marks.textContent = '//';
+      divider.append(label, marks);
+      el.steps.append(divider);
+    }
   }
 }
 

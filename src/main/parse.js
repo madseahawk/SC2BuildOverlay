@@ -139,7 +139,12 @@ function serializeBuild(build) {
   header('name', build.name);
   header('race', build.race);
   header('vs', build.vs);
-  header('slot', build.slot);
+  /* `declaredSlot` as the fallback, or the format does not round-trip: a build
+     straight out of `parseBuild` carries its file's number in `declaredSlot`
+     and nothing in `slot`, which the library fills in later — so writing it
+     back out dropped the `slot:` line. Callers that mean a specific number
+     (the editor, the importer) set `slot` and still win. */
+  header('slot', build.slot != null ? build.slot : build.declaredSlot);
   header('notes', build.notes);
 
   const steps = [...(build.steps || [])]

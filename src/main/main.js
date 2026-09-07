@@ -311,6 +311,8 @@ function settingsSnapshot() {
     // leaving the option looking broken.
     iconsAvailable: stepIcons.loaded(),
     iconFetch,
+    showHeader: config.get('showHeader'),
+    showFooter: config.get('showFooter'),
     opacity: config.get('opacity'),
     scale: config.get('scale'),
     stepScale: config.get('stepScale'),

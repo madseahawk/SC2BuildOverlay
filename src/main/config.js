@@ -20,6 +20,10 @@ const DEFAULTS = {
   // 'none' | 'small' | 'large' — unit/building pictures beside the step text.
   // Off by default: someone who knows the game reads the text faster.
   iconMode: 'none',
+  // Header and footer are reference, not the build: once you know the hotkeys
+  // and the matchup, the panel can be the steps and nothing else.
+  showHeader: true,
+  showFooter: true,
   // A second size axis for the step list alone, on top of `scale`: the build
   // order is what gets read mid-game, so it can be made bigger without the
   // header, the footer and the window growing to match.

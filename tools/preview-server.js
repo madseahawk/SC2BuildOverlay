@@ -128,7 +128,7 @@ const CONTROL_STUB = `<script>
   const BUILDS = ${JSON.stringify(BUILDS)};
   let running = false, t = 0, visible = true, locked = true, mode = 'auto', active = 'example-tvz.txt';
   let pinned = null, favs = [];
-  const settings = { iconMode: '${ICON_MODE}', iconsAvailable: true, iconFetch: null, opacity: 0.9, scale: 1, stepScale: 1, widthScale: 1, overlayWidth: 380, lookahead: 6, lookbehind: 1, leadSeconds: 3, autoPick: true, autoStart: false, autoStartOnGame: false, myName: '', soundEnabled: true, soundVolume: 0.5, soundFile: null, soundProblem: null };
+  const settings = { iconMode: '${ICON_MODE}', iconsAvailable: true, iconFetch: null, showHeader: true, showFooter: true, opacity: 0.9, scale: 1, stepScale: 1, widthScale: 1, overlayWidth: 380, lookahead: 6, lookbehind: 1, leadSeconds: 3, autoPick: true, autoStart: false, autoStartOnGame: false, myName: '', soundEnabled: true, soundVolume: 0.5, soundFile: null, soundProblem: null };
   let listener = null;
   const step = { at: 72, supply: 19, action: '사령부 (앞마당)' };
   function emit() {
@@ -231,7 +231,7 @@ const OVERLAY_STUB = `<script>
   document.head.append(bg);
 
   const STEPS = ${JSON.stringify(OVERLAY_STEPS)};
-  const settings = { iconMode: '${ICON_MODE}', iconsAvailable: true, opacity: 0.9, scale: 1, stepScale: 1, widthScale: 1, overlayWidth: 380, lookahead: 6, lookbehind: 1, leadSeconds: 0 };
+  const settings = { iconMode: '${ICON_MODE}', iconsAvailable: true, opacity: 0.9, scale: 1, stepScale: 1, widthScale: 1, overlayWidth: 380, showHeader: true, showFooter: true, lookahead: 6, lookbehind: 1, leadSeconds: 0 };
   let t = 66, listener = null;
   function emit() {
     if (!listener) return;
@@ -325,9 +325,17 @@ http
 
       const query = req.url.split('?')[1] || '';
 
-      // ?icons=none|small|large overrides PREVIEW_ICONS for one frame, so the
-      // preview can be looked at with and without pictures without needing
-      // the server restarted between looks.
+      // ?chrome=none hides the header and footer, which is the state the panel
+      // is most often actually run in.
+      if (/chrome=none/.test(query) && path.basename(file) === 'index.html') {
+        out = Buffer.from(
+          out
+            .toString('utf8')
+            .replace(/showHeader: true/, 'showHeader: false')
+            .replace(/showFooter: true/, 'showFooter: false')
+        );
+      }
+
       const icons = query.match(/icons=(none|small|large)/);
       if (icons && path.basename(file) === 'index.html') {
         out = Buffer.from(

@@ -29,6 +29,8 @@ const el = {
   iconsSmall: $('icons-small'),
   iconsLarge: $('icons-large'),
   iconsHint: $('icons-hint'),
+  showHeader: $('show-header'),
+  showFooter: $('show-footer'),
   iconsFetchRow: $('icons-fetch-row'),
   iconsFetchState: $('icons-fetch-state'),
   iconsFetch: $('icons-fetch'),
@@ -297,6 +299,10 @@ function renderSettings(view) {
     : (fetch && fetch.message) || '';
   el.iconsFetchState.classList.toggle('warn', Boolean(!fetching && fetch && fetch.message));
 
+  // Lit when the part is shown, the way the icon buttons read.
+  el.showHeader.classList.toggle('on', settings.showHeader !== false);
+  el.showFooter.classList.toggle('on', settings.showFooter !== false);
+
   if (!busy(el.opacity)) el.opacity.value = settings.opacity;
   el.opacityValue.textContent = `${Math.round(settings.opacity * 100)}%`;
 
@@ -365,6 +371,13 @@ el.toggleLocked.addEventListener('click', () => {
 });
 el.modeAuto.addEventListener('click', () => window.control.setMode('auto'));
 el.modeManual.addEventListener('click', () => window.control.setMode('manual'));
+
+el.showHeader.addEventListener('click', () =>
+  patchSettings({ showHeader: !(current && current.settings.showHeader !== false) })
+);
+el.showFooter.addEventListener('click', () =>
+  patchSettings({ showFooter: !(current && current.settings.showFooter !== false) })
+);
 
 el.iconsNone.addEventListener('click', () => patchSettings({ iconMode: 'none' }));
 el.iconsSmall.addEventListener('click', () => patchSettings({ iconMode: 'small' }));

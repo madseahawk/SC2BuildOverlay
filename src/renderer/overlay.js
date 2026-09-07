@@ -1,6 +1,10 @@
 'use strict';
 
 const IMMINENT_SECONDS = 8;
+/* Above this the step is far enough off to be background information. Between
+   the two it is the thing to get ready for; below IMMINENT_SECONDS it is the
+   thing to do now. The countdown is coloured by which band it is in. */
+const CAUTION_SECONDS = 20;
 
 const el = {
   panel: document.getElementById('panel'),
@@ -91,8 +95,23 @@ function renderSteps(view) {
     li.style.setProperty('--t', String(Math.round(performance.now())));
 
     const until = step.at - clock;
+    // Only meaningful while the clock is actually moving. Parked at 0:00 there
+    // is no time pressure to report, and colouring the row red would invent it.
+    const counting = i === nextIndex && ui.mode === 'auto' && view.game.inGame && until > 0;
+    // far / near / due. Set on the row, not just the countdown: the band, the
+    // number, the time and the supply all have to say the same thing, or the
+    // row reads green in one place and amber in another.
+    const band = counting
+      ? until > CAUTION_SECONDS
+        ? 'far'
+        : until > IMMINENT_SECONDS
+          ? 'near'
+          : 'due'
+      : null;
+
     if (i === nextIndex) {
       li.classList.add('next');
+      if (band) li.classList.add(band);
       // The pulse says "do this now", so it needs a clock that is actually
       // moving — parked at 0:00 while stopped, it would cry wolf.
       const live = view.running && view.game.inGame && ui.mode === 'auto';
@@ -143,7 +162,6 @@ function renderSteps(view) {
     const untilEl = document.createElement('span');
     untilEl.className = 'until';
     if (i === nextIndex) {
-      const counting = ui.mode === 'auto' && view.game.inGame && until > 0;
       // No countdown to give when the clock is parked or the step is already
       // due, and saying so beats leaving the highlight unexplained.
       untilEl.textContent = counting ? `-${formatTime(until)}` : '현재 진행중';
@@ -156,21 +174,6 @@ function renderSteps(view) {
         : [num, at, supply, action, untilEl])
     );
     el.steps.append(li);
-
-    // Splits what you are doing now from what is coming, once per render.
-    if (i === nextIndex && i + 1 < end) {
-      const divider = document.createElement('li');
-      divider.className = 'up-next';
-      const label = document.createElement('span');
-      label.textContent = '다음 단계';
-      // Its own element rather than a pseudo: the rule that runs off the label
-      // already uses ::after, and the marks belong between the two.
-      const marks = document.createElement('i');
-      marks.className = 'marks';
-      marks.textContent = '//';
-      divider.append(label, marks);
-      el.steps.append(divider);
-    }
   }
 }
 
@@ -238,6 +241,12 @@ window.overlay.onView((view) => {
   // does not follow it — that is the 가로 폭 setting — so a larger size trades
   // room for the action text, which ellipsises rather than wrapping.
   document.documentElement.style.setProperty('--step-scale', view.settings.stepScale || 1);
+  // The header is the only thing the window can be dragged by, so a hidden one
+  // comes back while unlocked — otherwise turning it off would strand the panel
+  // wherever it happened to be.
+  const dragging = !view.ui.locked;
+  document.body.classList.toggle('no-header', view.settings.showHeader === false && !dragging);
+  document.body.classList.toggle('no-footer', view.settings.showFooter === false);
 
   renderHeader(view);
   renderSteps(view);

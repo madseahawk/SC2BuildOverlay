@@ -50,11 +50,24 @@ function createConfig(file) {
   }
 
   let pending = null;
+
+  /* Writing from inside the timer, unguarded, put an EPERM or EBUSY on a path
+     nothing could catch — a throw from a timer callback takes the process with
+     it. A settings file that fails to save is worth a warning, not a crash. */
+  const write = () => {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    } catch (err) {
+      console.warn('설정을 저장하지 못했습니다:', err.message);
+    }
+  };
+
   const save = () => {
     clearTimeout(pending);
     pending = setTimeout(() => {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(data, null, 2));
+      pending = null;
+      write();
     }, 300);
   };
 
@@ -72,6 +85,15 @@ function createConfig(file) {
     merge(patch) {
       Object.assign(data, patch);
       save();
+    },
+    /* Writes whatever the debounce is still holding. Changing a setting and
+       quitting inside 300ms otherwise lost it — most likely of all with the
+       last thing you touched before closing the app. */
+    flush() {
+      if (!pending) return;
+      clearTimeout(pending);
+      pending = null;
+      write();
     },
   };
 }

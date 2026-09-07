@@ -51,6 +51,12 @@ class SC2Client extends EventEmitter {
     super();
     this.myName = myName;
     this.timer = null;
+    /* Bumped by every start and stop, and checked by an in-flight tick before
+       it reschedules itself. Without it a `stop()` landing during the await
+       does nothing — `clearTimeout` on an already-fired timer is a no-op — and
+       the tick that comes back queues the next one, so the app carries on
+       reading SC2 after it was told to stop. */
+    this.run = 0;
     this.state = this.blankState();
   }
 
@@ -72,14 +78,18 @@ class SC2Client extends EventEmitter {
 
   start() {
     if (this.timer) return;
+    const run = (this.run += 1);
     const tick = async () => {
       await this.poll();
+      // Stopped, or stopped and started again, while that poll was in flight.
+      if (run !== this.run) return;
       this.timer = setTimeout(tick, POLL_MS);
     };
     tick();
   }
 
   stop() {
+    this.run += 1;
     clearTimeout(this.timer);
     this.timer = null;
     // emitState only fires when something differs from `this.state`, so a
@@ -201,13 +211,19 @@ class GameWatcher extends EventEmitter {
     super();
     this.intervalMs = intervalMs;
     this.timer = null;
+    // See SC2Client.run — the same race, and it matters more here: this poll is
+    // the one thing that runs while the app is stopped, and a copy that outlives
+    // its stop would go on reading the game with nothing on screen saying so.
+    this.run = 0;
   }
 
   start() {
     if (this.timer) return;
+    const run = (this.run += 1);
     const tick = async () => {
       this.timer = null;
       const [game, ui] = await Promise.all([getJSON(GAME_URL, 800), getJSON(UI_URL, 800)]);
+      if (run !== this.run) return;
       if (isInGame(game, ui)) {
         this.emit('started');
         return; // whoever listens takes over the polling
@@ -218,6 +234,7 @@ class GameWatcher extends EventEmitter {
   }
 
   stop() {
+    this.run += 1;
     clearTimeout(this.timer);
     this.timer = null;
   }

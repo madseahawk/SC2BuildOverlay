@@ -2,7 +2,7 @@ name: 12 Pool (Sample)
 race: Z
 vs: P
 slot: 1
-notes: 출처 표본 151판 승률 50% · 이 분기 151판 승률 50% · 맵 Winter Madness LE
+notes: 형식을 보여주는 예시입니다. 편집기에서 고치거나 지우고 직접 만드세요.
 
 0:00  @12  부화장
 

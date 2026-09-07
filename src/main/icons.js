@@ -18,6 +18,7 @@ const { pathToFileURL } = require('url');
 let terms = [];
 let baseUrl = null;
 let loadError = null;
+let haveImages = false;
 
 /**
  * @param dir directory holding the PNGs and `manifest.json`
@@ -28,6 +29,7 @@ function load(dir) {
   terms = [];
   baseUrl = null;
   loadError = null;
+  haveImages = false;
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
     const entries = Object.entries(manifest.terms || {});
@@ -35,13 +37,23 @@ function load(dir) {
     entries.sort((a, b) => b[0].length - a[0].length);
     terms = entries.map(([term, file]) => ({ term, file: file + '.png' }));
     baseUrl = pathToFileURL(dir + path.sep).href;
+    /* The manifest ships with the app; the images do not — they are fetched on
+       request. So a readable manifest says nothing about whether there is
+       anything to draw, and on a fresh install there is not. Sampling one file
+       is enough to tell the two states apart, and cheap enough to do on every
+       load. */
+    haveImages = terms.some((t) => fs.existsSync(path.join(dir, t.file)));
   } catch (err) {
     loadError = err.message;
   }
   return { count: terms.length, error: loadError };
 }
 
-const loaded = () => terms.length > 0;
+/* True only when there are pictures to draw. The control window shows the
+   내려받기 button on the strength of this, so answering yes for a manifest with
+   no images behind it left a new install with empty icon slots and nothing on
+   screen explaining how to fill them. */
+const loaded = () => terms.length > 0 && haveImages;
 
 /**
  * Icons for one action line, in the order the terms appear in the text.

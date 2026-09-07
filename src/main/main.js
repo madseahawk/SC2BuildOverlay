@@ -1023,6 +1023,7 @@ app.on('before-quit', () => {
 });
 
 app.on('will-quit', () => {
+  if (config) config.flush();
   globalShortcut.unregisterAll();
   if (client) client.stop();
   if (watcher) watcher.stop();

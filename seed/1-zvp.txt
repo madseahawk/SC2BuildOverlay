@@ -1,4 +1,4 @@
-name: 12 Pool (Expand-into-Proxy)
+name: 12 Pool (Sample)
 race: Z
 vs: P
 slot: 1

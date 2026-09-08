@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld('editor', {
   importText: (raw) => ipcRenderer.invoke('editor:import', raw),
   openExport: () => ipcRenderer.invoke('editor:open-export'),
   convertExport: (payload) => ipcRenderer.invoke('editor:convert-export', payload),
+  terms: () => ipcRenderer.invoke('editor:terms'),
   openDir: () => ipcRenderer.invoke('editor:open-dir'),
 });

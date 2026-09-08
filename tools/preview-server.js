@@ -27,6 +27,20 @@ const ICONS_DIR = path.join(__dirname, '..', 'assets', 'icons');
 // PREVIEW_ICONS=small|large to inspect the icon layouts.
 const ICON_MODE = process.env.PREVIEW_ICONS || 'none';
 
+/* The editor's 행동 suggestions, read from the real manifest so the preview
+   offers the same vocabulary the app does. Served over this server's /icons/
+   route, since a page on http cannot load file:// images. */
+const TERMS = (() => {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ICONS_DIR, 'manifest.json'), 'utf8'));
+    return Object.entries(manifest.terms || {})
+      .sort((a, b) => a[0].length - b[0].length || a[0].localeCompare(b[0]))
+      .map(([term, file]) => ({ term, src: '/icons/' + file + '.png' }));
+  } catch {
+    return [];
+  }
+})();
+
 const EXPORT_FILE = process.env.PREVIEW_EXPORT || '';
 let EXPORT_PROBE = { ok: false };
 if (EXPORT_FILE) {
@@ -99,6 +113,7 @@ const EDITOR_STUB = `<script>
     remove: async () => ({ ok: true }),
     importText: async () => ({ build: SAMPLE, problems: [] }),
     openDir: async () => {},
+    terms: async () => ${JSON.stringify(TERMS)},
     openExport: async () => {
       const p = ${JSON.stringify(EXPORT_PROBE)};
       if (!p.ok) return { ok: false, message: p.message || '미리보기에 익스포트가 설정되지 않았습니다 (PREVIEW_EXPORT)' };

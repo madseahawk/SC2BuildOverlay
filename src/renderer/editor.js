@@ -135,8 +135,21 @@ function makeRow(step) {
     step.action = action.value;
     markDirty();
   });
+
+  /* Suggests the words that put a picture on the overlay. Returns true when the
+     key belonged to the popup, which is how Enter can mean "take this
+     suggestion" while the list is open and "next row" when it is not. */
+  const suggestKey = window.suggest.attach(action, () => {
+    step.action = action.value;
+    markDirty();
+  });
+
   // Enter at the end of a row adds the next one — the common authoring rhythm.
+  // `isComposing` first: the Enter that commits a Korean syllable is the IME's,
+  // and treating it as "next row" added a row every time a step name ended on a
+  // character still being composed.
   action.addEventListener('keydown', (e) => {
+    if (e.isComposing || suggestKey(e)) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       addStep({ at: (step.at || 0) + 15, section: step.section });
@@ -168,6 +181,8 @@ function makeRow(step) {
 }
 
 function renderRows() {
+  // Every field the popup could be attached to is about to be replaced.
+  window.suggest.close();
   el.rows.replaceChildren(...state.steps.map(makeRow));
   el.stepsEmpty.classList.toggle('gone', state.steps.length > 0);
   refreshOrderWarning();
@@ -608,3 +623,10 @@ window.editor.onClock((clock) => {
 
 newBuild();
 refreshList(null);
+
+/* Fetched once. The manifest does not change while the app runs, and a failure
+   here only costs the suggestions — the field still takes any text. */
+window.editor
+  .terms()
+  .then((list) => window.suggest.setTerms(list))
+  .catch(() => {});

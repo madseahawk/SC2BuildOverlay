@@ -90,4 +90,21 @@ function iconsFor(action, max = 3) {
   return unique.slice(0, max).map(({ term, src }) => ({ term, src }));
 }
 
-module.exports = { load, loaded, iconsFor };
+/**
+ * Every term the manifest knows, for the editor's suggestions.
+ *
+ * Shortest first — the opposite of the matching order. Matching wants the
+ * longest name that fits so `병영 기술실` beats `병영`; a person typing 병 wants
+ * to see `병영` before `병영 기술실`.
+ *
+ * `src` is null when the images have not been downloaded, so the caller can
+ * offer the names without pretending there are pictures behind them.
+ */
+function allTerms() {
+  const withImages = loaded();
+  return [...terms]
+    .sort((a, b) => a.term.length - b.term.length || a.term.localeCompare(b.term))
+    .map(({ term, file }) => ({ term, src: withImages ? baseUrl + file : null }));
+}
+
+module.exports = { load, loaded, iconsFor, allTerms };

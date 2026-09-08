@@ -7,6 +7,7 @@ const { BrowserWindow, dialog, shell, ipcMain } = require('electron');
 const { parseBuild, serializeBuild } = require('./parse');
 const { convert } = require('./import-vespene');
 const { safeSend } = require('./send');
+const stepIcons = require('./icons');
 
 /**
  * The build-order editor: a normal, focusable window (unlike the overlay) that
@@ -289,6 +290,14 @@ function setupEditor({ buildsDir, iconPath, library, getGameState }) {
       selected: result.selected,
     };
   });
+
+  /**
+   * The words that put a picture next to a step, for the editor to suggest.
+   *
+   * Read once per editor window rather than per keystroke: the manifest does
+   * not change while the app runs, and 201 terms is nothing to hold.
+   */
+  ipcMain.handle('editor:terms', () => stepIcons.allTerms());
 
   ipcMain.handle('editor:open-dir', () => shell.openPath(buildsDir));
 

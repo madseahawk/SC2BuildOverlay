@@ -32,6 +32,11 @@ const MANIFEST = path.join(OUT_DIR, 'manifest.json');
  * guess these would silently resolve to nothing, so every one is spelled out.
  */
 const ALIASES = {
+  /* The Orbital Command was called Surveillance Station before release, and the
+     texture kept the old name. Nothing containing "orbital" exists in the pack,
+     which is why this looked for a long time like the one term with no picture —
+     the pack's own `unit_icons.json` is what gives it away. */
+  OrbitalCommand: 'btn-building-terran-surveillancestation',
   SensorTower: 'btn-building-terran-sensordome',
   HellionTank: 'btn-unit-terran-hellionbattlemode',
   Hellbat: 'btn-unit-terran-hellionbattlemode',

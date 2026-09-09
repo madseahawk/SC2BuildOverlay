@@ -1,9 +1,10 @@
 {
   "source": "https://github.com/BurnySc2/sc2-planner (master/src/icons/png)",
   "note": "코드는 MIT. 아이콘 그림은 Blizzard Entertainment 저작물이며 개인·비상업 용도로만 사용합니다.",
-  "generated": "2026-09-04",
+  "generated": "2026-09-09",
   "terms": {
     "사령부": "btn-building-terran-commandcenter",
+    "궤도 사령부": "btn-building-terran-surveillancestation",
     "행성 요새": "btn-building-terran-planetaryfortress",
     "보급고": "btn-building-terran-supplydepot",
     "정제소": "btn-building-terran-refinery",

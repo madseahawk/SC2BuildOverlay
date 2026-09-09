@@ -1,6 +1,6 @@
 {
   "name": "sc2-build-overlay",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Hand-written StarCraft II build order overlay, synced to the in-game clock",
   "main": "src/main/main.js",
   "author": "SC2 Build Overlay",
@@ -29,7 +29,11 @@
     "extraResources": [
       "assets/icon.ico",
       "assets/cue.wav",
-      "assets/icons/manifest.json"
+      "assets/icons/manifest.json",
+      "tools/replay.py",
+      "tools/impshim.py",
+      "tools/replay-requirements.txt",
+      "src/main/translate.js"
     ],
     "directories": {
       "output": "dist"

@@ -39,6 +39,22 @@ const el = {
   impFiller: $('imp-filler'),
   importReport: $('import-report'),
 
+  replayPanel: $('replay-panel'),
+  replaySetupBox: $('replay-setup-box'),
+  replaySetupWhy: $('replay-setup-why'),
+  replaySetup: $('replay-setup'),
+  replayGetPython: $('replay-get-python'),
+  replayRecheck: $('replay-recheck'),
+  replaySetupState: $('replay-setup-state'),
+  replayOpenBox: $('replay-open-box'),
+  openReplay: $('open-replay'),
+  replaySource: $('replay-source'),
+  replayPick: $('replay-pick'),
+  replayPlayers: $('replay-players'),
+  replayTrim: $('replay-trim'),
+  replayMinutes: $('replay-minutes'),
+  replayReport: $('replay-report'),
+
   status: $('status'),
   save: $('save-build'),
   remove: $('delete-build'),
@@ -54,6 +70,10 @@ const state = {
   builds: [],
   /** Branch currently chosen from an opened export, so options can re-convert. */
   branch: null,
+  /** Player currently chosen from an opened replay, for the same reason. */
+  replay: null,
+  /** Whether the replay panel has looked for Python yet. */
+  replayProbed: false,
 };
 
 function formatTime(seconds) {
@@ -569,6 +589,175 @@ async function importText() {
   refreshPreview();
 }
 
+// ---------------------------------------------------------------- replay import
+
+/**
+ * Shows either the setup prompt or the open button, never both.
+ *
+ * Reading a replay needs Python, which the app does not ship. Rather than a
+ * button that fails, the panel says what is missing and — when the missing part
+ * is something the app can fetch — offers to do it.
+ */
+async function refreshReplayState(refresh) {
+  const got = await window.editor.replayState(refresh);
+  const ready = got.state === 'ready';
+
+  el.replayOpenBox.hidden = !ready;
+  el.replaySetupBox.hidden = ready;
+
+  if (!ready) {
+    el.replaySetupWhy.textContent = got.message || '';
+    // Nothing to press when there is no Python to build on — offer the
+    // download instead, so the message is something the user can act on.
+    el.replaySetup.hidden = got.state !== 'needs-setup';
+    el.replayGetPython.hidden = got.state !== 'no-python';
+    el.replaySetupState.textContent = got.state === 'setting-up' ? '준비 중…' : '';
+  }
+  return ready;
+}
+
+async function runReplaySetup() {
+  el.replaySetup.disabled = true;
+  el.replaySetupState.textContent = '준비 중…';
+  const result = await window.editor.replaySetup();
+  el.replaySetup.disabled = false;
+
+  if (!result.ok) {
+    el.replaySetupWhy.textContent = result.message || '준비하지 못했습니다.';
+    el.replaySetupState.textContent = '';
+    return;
+  }
+  el.replaySetupState.textContent = '';
+  await refreshReplayState(true);
+}
+
+function replayMinutes() {
+  if (!el.replayTrim.checked) return null;
+  const value = Number(el.replayMinutes.value);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function renderReplayPlayers(players, chosen) {
+  el.replayPlayers.replaceChildren();
+
+  players.forEach((p) => {
+    const li = document.createElement('li');
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'branch-item';
+    if (p.id === chosen) item.classList.add('active');
+
+    const mark = document.createElement('span');
+    mark.className = 'mark';
+    mark.textContent = p.id === chosen ? '▶' : '';
+
+    const race = document.createElement('span');
+    race.className = 'num';
+    race.textContent = p.race || '—';
+
+    const who = document.createElement('span');
+    who.className = 'wr';
+    who.textContent = p.human ? '사람' : 'AI';
+
+    const result = document.createElement('span');
+    result.className = 'num';
+    result.textContent = p.won ? '승' : '패';
+
+    const name = document.createElement('span');
+    name.className = 'label';
+    name.textContent = p.name;
+
+    item.append(mark, race, who, result, name);
+    item.addEventListener('click', () => useReplayPlayer(p.id, players));
+    li.append(item);
+    el.replayPlayers.append(li);
+  });
+}
+
+/** Converts the chosen player's build and drops it into the form. */
+async function useReplayPlayer(playerId, players) {
+  el.replayReport.classList.remove('bad');
+  el.replayReport.textContent = '읽는 중…';
+
+  const result = await window.editor.convertReplay({
+    player: playerId,
+    minutes: replayMinutes(),
+  });
+  if (!result.ok) {
+    el.replayReport.textContent = result.message || '읽지 못했습니다.';
+    el.replayReport.classList.add('bad');
+    return;
+  }
+
+  state.replay = { player: playerId, players };
+  state.branch = null;
+  fillForm(result.build);
+  el.filename.value = '';
+  state.replacing = null;
+  state.dirty = true;
+  el.remove.disabled = true;
+
+  renderReplayPlayers(players, playerId);
+
+  // Only what the user can act on. Which of the three ways each time was
+  // worked out is a question for whoever is debugging the extraction, and it
+  // lives in the command line's report; here it was just noise.
+  const notes = [`${result.steps}단계`];
+  if (result.missing.length) notes.push(`사전에 없는 이름: ${result.missing.join(', ')}`);
+  if (result.noBuildTime.length) {
+    notes.push(`빌드 시간을 몰라 나온 시각을 쓴 것: ${result.noBuildTime.join(', ')}`);
+  }
+  el.replayReport.textContent = notes.join(' · ');
+  el.replayReport.classList.toggle('bad',
+    result.missing.length > 0 || result.noBuildTime.length > 0);
+
+  setStatus(`${result.build.steps.length}단계 가져옴 · 파일 이름을 정하고 저장하세요`, 'ok');
+  refreshPreview();
+}
+
+async function openReplay() {
+  if (!confirmDiscard()) return;
+
+  el.openReplay.disabled = true;
+  el.replaySource.textContent = '읽는 중…';
+  const result = await window.editor.openReplay();
+  el.openReplay.disabled = false;
+
+  if (result.canceled) {
+    el.replaySource.textContent = '';
+    return;
+  }
+  if (!result.ok) {
+    el.replaySource.textContent = '';
+    // Python may have been removed since the panel last looked.
+    if (result.needsSetup) {
+      await refreshReplayState(true);
+      return;
+    }
+    setStatus(result.message, 'bad');
+    return;
+  }
+
+  const r = result.replay;
+  const length = `${Math.floor(r.seconds / 60)}:${String(r.seconds % 60).padStart(2, '0')}`;
+  el.replaySource.textContent = `${r.name} · ${r.map} · SC2 ${r.version} · ${length}`;
+  el.replayPick.hidden = false;
+  el.replayReport.textContent = '';
+
+  // A replay from a patch newer than the installed decoder is read with the
+  // newest one we have. It nearly always works, but the user should know the
+  // numbers rest on that rather than find out from a build that reads oddly.
+  if (r.fellBackTo) {
+    el.replaySource.textContent
+      += ` · 이 패치의 해독표가 없어 ${r.fellBackTo} 것으로 읽었습니다`;
+  }
+
+  // The human by default, which is what someone reviewing their own game wants.
+  const mine = r.players.find((p) => p.human) || r.players[0];
+  renderReplayPlayers(r.players, mine ? mine.id : null);
+  if (mine) await useReplayPlayer(mine.id, r.players);
+}
+
 // ---------------------------------------------------------------- wiring
 
 [el.name, el.notes].forEach((input) => input.addEventListener('input', markDirty));
@@ -594,6 +783,35 @@ el.save.addEventListener('click', save);
 el.remove.addEventListener('click', remove);
 el.doImport.addEventListener('click', importText);
 el.openExport.addEventListener('click', openExport);
+
+el.openReplay.addEventListener('click', openReplay);
+el.replaySetup.addEventListener('click', runReplaySetup);
+el.replayGetPython.addEventListener('click', () => window.editor.openPythonSite());
+el.replayRecheck.addEventListener('click', async () => {
+  el.replayRecheck.disabled = true;
+  el.replaySetupState.textContent = '확인 중…';
+  await refreshReplayState(true);
+  el.replaySetupState.textContent = '';
+  el.replayRecheck.disabled = false;
+});
+window.editor.onReplayProgress((line) => {
+  el.replaySetupState.textContent = line;
+});
+
+// Trimming re-converts the player already chosen, the way the JSON options do.
+[el.replayTrim, el.replayMinutes].forEach((input) =>
+  input.addEventListener('change', () => {
+    if (state.replay) useReplayPlayer(state.replay.player, state.replay.players);
+  }));
+
+// Probed when the panel is first opened rather than at start-up: it spawns a
+// process, and most sessions never touch this panel.
+el.replayPanel.addEventListener('toggle', () => {
+  if (el.replayPanel.open && !state.replayProbed) {
+    state.replayProbed = true;
+    refreshReplayState(true);
+  }
+});
 
 // Changing an option re-converts the branch already chosen.
 [el.impNotes, el.impSituational, el.impFiller].forEach((input) =>

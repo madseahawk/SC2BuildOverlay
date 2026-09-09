@@ -12,6 +12,7 @@ const { setupControl } = require('./control');
 const { safeSend } = require('./send');
 const stepIcons = require('./icons');
 const { downloadIcons } = require('./icon-download');
+const { createReplayTool } = require('./replay');
 
 // Width at 100%; the panel is laid out in rem off one root font-size, so the
 // content width scales linearly with the 크기 setting.
@@ -37,7 +38,9 @@ const MIN_HEIGHT = 80;
  * working on the app.
  */
 const BUNDLED_BUILDS = path.join(app.getAppPath(), 'seed');
-const BUILDS_DIR = app.isPackaged ? path.join(app.getPath('userData'), 'builds') : BUNDLED_BUILDS;
+const BUILDS_DIR = app.isPackaged
+  ? path.join(app.getPath('userData'), 'builds')
+  : path.join(app.getAppPath(), 'builds');
 
 // Assets ship unpacked (extraResources), so this is always a real file on disk
 // rather than a path inside the archive.
@@ -63,6 +66,21 @@ const ICON_MANIFEST = path.join(RESOURCES_DIR, 'assets', 'icons', 'manifest.json
 const STEP_ICONS_DIR = app.isPackaged
   ? path.join(app.getPath('userData'), 'icons')
   : path.join(RESOURCES_DIR, 'assets', 'icons');
+
+/**
+ * Reading .SC2Replay files needs Python, which this app does not ship. The
+ * private environment it may build goes next to the app's own data, where
+ * deleting it leaves nothing behind; in development it is the same
+ * `.venv-replay` the command line uses, so there is only ever one of them.
+ */
+const REPLAY_VENV = app.isPackaged
+  ? path.join(app.getPath('userData'), 'replay-python')
+  : path.join(RESOURCES_DIR, '.venv-replay');
+const replayTool = createReplayTool({
+  resourcesDir: RESOURCES_DIR,
+  venvDir: REPLAY_VENV,
+  documentsDir: app.getPath('documents'),
+});
 
 /**
  * The user's own cue sound, kept as a copy rather than a path to wherever they
@@ -98,9 +116,13 @@ function seedIconManifest() {
 
 /** Copies the bundled builds into userData the first time, never over the top. */
 function seedBuilds() {
-  if (!app.isPackaged) return;
   try {
+    // Both modes: the library watches this folder and the editor writes to it,
+    // and neither copes with it not being there.
     fs.mkdirSync(BUILDS_DIR, { recursive: true });
+    // Only a fresh install gets the sample. A developer's empty `builds/` is a
+    // deliberate state — they cleared it — not a folder waiting to be filled.
+    if (!app.isPackaged) return;
     if (fs.readdirSync(BUILDS_DIR).length > 0) return;
     for (const name of fs.readdirSync(BUNDLED_BUILDS)) {
       fs.copyFileSync(path.join(BUNDLED_BUILDS, name), path.join(BUILDS_DIR, name));
@@ -921,6 +943,7 @@ function boot() {
     iconPath: ICON_PATH,
     library,
     getGameState: () => gameState,
+    replayTool,
   });
 
   control = setupControl({

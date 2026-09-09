@@ -23,9 +23,106 @@ const TYPES = {
   '.woff2': 'font/woff2',
 };
 
+/* PREVIEW_REPLAY takes either one of these state names — to inspect the screens
+   shown when Python is missing — or a path to a .SC2Replay, which runs the real
+   modules through /api/replay/. Unset means the ready state with canned data. */
+const REPLAY_STATE = {
+  ready: { state: 'ready' },
+  'needs-setup': {
+    state: 'needs-setup',
+    message: '파이썬이 설치돼 있습니다. 아래 버튼을 누르면 리플레이를 읽을 준비를 '
+      + '마칩니다 (한 번만, 약 3MB).',
+  },
+  'no-python': {
+    state: 'no-python',
+    message: '리플레이를 읽으려면 파이썬이 필요합니다. 아래에서 받아 설치한 뒤 '
+      + '다시 확인을 누르세요.',
+  },
+}[process.env.PREVIEW_REPLAY || 'ready'] || null;
+
 const ICONS_DIR = path.join(__dirname, '..', 'assets', 'icons');
 // PREVIEW_ICONS=small|large to inspect the icon layouts.
 const ICON_MODE = process.env.PREVIEW_ICONS || 'none';
+
+const REPO = path.join(__dirname, '..');
+
+/**
+ * The replay panel's back end, doing what the editor's IPC handlers do.
+ *
+ * PREVIEW_REPLAY=<file.SC2Replay> reads that replay for real; anything else
+ * falls back to the fake states above so the not-ready screens stay inspectable
+ * on a machine with no Python.
+ */
+const REPLAY_FILE = (() => {
+  const want = process.env.PREVIEW_REPLAY || '';
+  if (!want || REPLAY_STATE) return null;
+  return path.isAbsolute(want) ? want : path.join(REPO, want);
+})();
+
+const replayApi = (() => {
+  if (!REPLAY_FILE) {
+    return async () => ({ ok: false, message: 'PREVIEW_REPLAY 에 리플레이 파일을 주세요.' });
+  }
+  const { createReplayTool } = require(path.join(REPO, 'src', 'main', 'replay.js'));
+  const { parseBuild } = require(path.join(REPO, 'src', 'main', 'parse.js'));
+  const tool = createReplayTool({
+    resourcesDir: REPO,
+    // PREVIEW_REPLAY_VENV points somewhere that does not exist yet, to see the
+    // states a machine without the libraries actually lands in.
+    venvDir: process.env.PREVIEW_REPLAY_VENV || path.join(REPO, '.venv-replay'),
+  });
+
+  return async (action, query) => {
+    const params = new URLSearchParams(query);
+    if (action === 'state') return tool.state({ refresh: true });
+    if (action === 'setup') {
+      // The progress lines come back together rather than as they happen: this
+      // is one request, and what matters here is that the real setup runs.
+      const lines = [];
+      const done = await tool.setup((line) => lines.push(line));
+      return { ...done, lines };
+    }
+    if (action === 'open') {
+      const got = await tool.list([REPLAY_FILE]);
+      if (!got.ok) return got;
+      const replay = (got.replays || [])[0];
+      return replay ? { ok: true, replay } : { ok: false, message: '리플레이를 읽지 못했습니다.' };
+    }
+    if (action === 'convert') {
+      const minutes = params.get('minutes');
+      const got = await tool.convert(REPLAY_FILE, {
+        player: params.get('player'),
+        minutes: minutes ? Number(minutes) : null,
+      });
+      if (!got.ok) return got;
+      const first = (got.builds || [])[0];
+      if (!first) return { ok: false, message: '단계를 하나도 찾지 못했습니다.' };
+
+      const parsed = parseBuild(first.text, path.basename(REPLAY_FILE));
+      if (!parsed.steps.length) {
+        const why = (parsed.problems || []).map((p) => `${p.line}행: ${p.message}`).join(' · ');
+        return { ok: false, message: why || '읽을 수 있는 단계가 없습니다.' };
+      }
+      return {
+        ok: true,
+        build: {
+          name: parsed.name,
+          race: parsed.race,
+          vs: parsed.vs,
+          slot: parsed.declaredSlot,
+          notes: parsed.notes,
+          steps: parsed.steps,
+        },
+        problems: parsed.problems || [],
+        steps: first.steps,
+        sources: first.sources || {},
+        missing: first.missing || [],
+        noBuildTime: first.noBuildTime || [],
+      };
+    }
+    return { ok: false, message: '알 수 없는 요청: ' + action };
+  };
+})();
 
 /* The editor's 행동 suggestions, read from the real manifest so the preview
    offers the same vocabulary the app does. Served over this server's /icons/
@@ -125,7 +222,43 @@ const EDITOR_STUB = `<script>
       if (!p) return { ok: false, message: '먼저 파일을 여세요.' };
       const key = branchId + '|' + Boolean(options && options.notes) + '|' + (options ? options.situational !== false : true);
       return p.results[key] || { ok: false, message: '미리보기에 해당 조합이 없습니다: ' + key };
-    }
+    },
+    /* Either canned states, or the real modules over /api/replay/. */
+    replayState: async () => ${REPLAY_FILE
+      ? "fetch('/api/replay/state').then((r) => r.json())"
+      : `(${JSON.stringify(REPLAY_STATE)})`},
+    replaySetup: async () => ${REPLAY_FILE
+      ? `fetch('/api/replay/setup').then((r) => r.json()).then((d) => {
+      (d.lines || []).forEach((l) => window.__replayProgress && window.__replayProgress(l));
+      return d;
+    })`
+      : `(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+      window.__replayProgress && window.__replayProgress('전용 파이썬 환경을 만듭니다…');
+      await new Promise((r) => setTimeout(r, 900));
+      window.__replayProgress && window.__replayProgress('필요한 파일을 받습니다…');
+      await new Promise((r) => setTimeout(r, 900));
+      return { ok: false, message: '미리보기에서는 실제로 준비하지 않습니다.' };
+    })()`},
+    onReplayProgress: (cb) => { window.__replayProgress = cb; },
+    openPythonSite: async () => { console.log('preview: python.org 을 열었다고 가정'); },
+    openReplay: async () => ${REPLAY_FILE
+      ? "fetch('/api/replay/open').then((r) => r.json())"
+      : `({ ok: true, replay: {
+      name: '토스전 4차관', map: 'Washout LE', version: '5.0.16.97563', seconds: 304,
+      players: [
+        { id: 1, name: '내계정', race: '프로토스', human: true, won: true },
+        { id: 2, name: '인공지능 칸 (아주 쉬움)', race: '프로토스', human: false, won: false }
+      ]
+    } })`},
+    convertReplay: async ({ player, minutes }) => ${REPLAY_FILE
+      ? "fetch('/api/replay/convert?player=' + player + (minutes ? '&minutes=' + minutes : '')).then((r) => r.json())"
+      : `({
+      ok: true, build: SAMPLE, problems: [],
+      steps: player === 1 ? 22 : 12,
+      sources: player === 1 ? { event: 23, derived: 19, table: 1 } : { event: 9, table: 17 },
+      missing: [], noBuildTime: player === 1 ? [] : ['Zealot']
+    })`}
   };
   addEventListener('DOMContentLoaded', () => setTimeout(() => document.querySelectorAll('.build-item')[3]?.click(), 120));
 })();
@@ -209,12 +342,41 @@ const CONTROL_STUB = `<script>
 </script>
 `;
 
-// Real steps, read from a build file, so the preview shows the actual thing.
+/**
+ * Real steps, read from a build file, so the preview shows the actual thing.
+ *
+ * `builds/` holds whatever the developer is working on and is often empty, so
+ * this takes the first file it finds and falls back to the shipped sample.
+ * Naming one file was enough to make the whole preview refuse to start with
+ * ENOENT the moment that file was deleted.
+ */
 const OVERLAY_BUILD = (() => {
   const { parseBuild } = require(path.join(__dirname, '..', 'src', 'main', 'parse.js'));
-  const file = process.env.PREVIEW_BUILD || '2-tvp.txt';
-  const text = fs.readFileSync(path.join(__dirname, '..', 'builds', file), 'utf8');
-  return parseBuild(text, file);
+  const dirs = [path.join(__dirname, '..', 'builds'), path.join(__dirname, '..', 'seed')];
+
+  const wanted = process.env.PREVIEW_BUILD;
+  const found = (() => {
+    for (const dir of dirs) {
+      let names;
+      try {
+        names = fs.readdirSync(dir).filter((n) => /\.(txt|build|md)$/i.test(n));
+      } catch (err) {
+        continue;   // the folder need not exist
+      }
+      const pick = wanted && names.includes(wanted) ? wanted : names[0];
+      if (pick) return { file: pick, full: path.join(dir, pick) };
+    }
+    return null;
+  })();
+
+  if (!found) {
+    console.warn('builds/ 와 seed/ 에 빌드 파일이 없어 오버레이 미리보기는 비어 있습니다.');
+    return parseBuild('name: (빌드 없음)\nrace: T\n', 'empty.txt');
+  }
+  if (wanted && found.file !== wanted) {
+    console.warn(`PREVIEW_BUILD=${wanted} 를 찾지 못해 ${found.file} 를 씁니다.`);
+  }
+  return parseBuild(fs.readFileSync(found.full, 'utf8'), found.file);
 })();
 /**
  * Step icons, with the main process's `file://` sources rewritten to this
@@ -309,6 +471,23 @@ http
         if (err) res.writeHead(404).end('not found');
         else res.writeHead(200, { 'content-type': 'image/png' }).end(png);
       });
+      return;
+    }
+
+    /* The replay panel runs against the real modules rather than canned data.
+       A stub that returned an already-shaped build hid a main-process bug that
+       rejected every perfectly good replay, so this route reproduces what the
+       editor's IPC handlers do instead of imitating their output. */
+    if (rel.startsWith('/api/replay/')) {
+      replayApi(rel.slice('/api/replay/'.length), req.url.split('?')[1] || '')
+        .then((payload) => {
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify(payload));
+        })
+        .catch((err) => {
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: false, message: String(err && err.message) }));
+        });
       return;
     }
     const file = path.resolve(ROOT, `.${rel === '/' ? '/control.html' : rel}`);

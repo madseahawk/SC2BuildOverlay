@@ -13,12 +13,17 @@ const stepIcons = require('./icons');
  * The build-order editor: a normal, focusable window (unlike the overlay) that
  * reads and writes the files in `builds/`.
  */
-function setupEditor({ buildsDir, iconPath, library, getGameState }) {
+function setupEditor({ buildsDir, iconPath, library, getGameState, replayTool }) {
   let win = null;
 
   // The last opened export, kept so switching branch or toggling an option
   // re-converts without asking for the file again.
   let lastExport = null;
+
+  // The last opened replay, for the same reason: picking the other player or
+  // trimming the length re-reads the file we already have rather than the
+  // dialog we already dismissed.
+  let lastReplay = null;
 
   const safeName = (filename) => {
     const base = path.basename(String(filename || '').trim());
@@ -298,6 +303,83 @@ function setupEditor({ buildsDir, iconPath, library, getGameState }) {
    * not change while the app runs, and 201 terms is nothing to hold.
    */
   ipcMain.handle('editor:terms', () => stepIcons.allTerms());
+
+  /* ---- reading a build order out of a replay ------------------------- */
+
+  ipcMain.handle('editor:replay-state', (_e, refresh) =>
+    replayTool.state({ refresh: Boolean(refresh) }));
+
+  /**
+   * Sets up the private Python, reporting progress as it goes.
+   *
+   * It downloads about 3MB and can take a while on a slow line, so the window
+   * hears each step instead of sitting on a dead button.
+   */
+  ipcMain.handle('editor:replay-setup', () =>
+    replayTool.setup((line) => safeSend(win, 'replay-progress', line)));
+
+  ipcMain.handle('editor:open-replay', async () => {
+    const dir = replayTool.defaultDir();
+    const options = {
+      title: '리플레이 열기',
+      filters: [{ name: 'SC2 리플레이', extensions: ['SC2Replay'] }],
+      properties: ['openFile'],
+      ...(dir ? { defaultPath: dir } : {}),
+    };
+    const { canceled, filePaths } = await (win && !win.isDestroyed()
+      ? dialog.showOpenDialog(win, options)
+      : dialog.showOpenDialog(options));
+
+    if (canceled || !filePaths || !filePaths[0]) return { ok: false, canceled: true };
+
+    const result = await replayTool.list([filePaths[0]]);
+    if (!result.ok) return result;
+
+    const replay = (result.replays || [])[0];
+    if (!replay) return { ok: false, message: '리플레이를 읽지 못했습니다.' };
+
+    lastReplay = { file: filePaths[0] };
+    return { ok: true, replay };
+  });
+
+  ipcMain.handle('editor:convert-replay', async (_e, { player, minutes } = {}) => {
+    if (!lastReplay) return { ok: false, message: '먼저 리플레이를 여세요.' };
+    const result = await replayTool.convert(lastReplay.file, { player, minutes });
+    if (!result.ok) return result;
+
+    const first = (result.builds || [])[0];
+    if (!first) return { ok: false, message: '단계를 하나도 찾지 못했습니다.' };
+
+    // Straight through the normal parser, so a replay-made build is held to
+    // exactly the same rules as a hand-written one. parseBuild returns the
+    // fields flat, the same shape `editor:read` reassembles for the form.
+    const parsed = parseBuild(first.text, path.basename(lastReplay.file));
+    if (!parsed.steps.length) {
+      const why = (parsed.problems || []).map((p) => `${p.line}행: ${p.message}`).join(' · ');
+      return { ok: false, message: why || '읽을 수 있는 단계가 없습니다.' };
+    }
+    return {
+      ok: true,
+      build: {
+        name: parsed.name,
+        race: parsed.race,
+        vs: parsed.vs,
+        slot: parsed.declaredSlot,
+        notes: parsed.notes,
+        steps: parsed.steps,
+      },
+      problems: parsed.problems || [],
+      steps: first.steps,
+      sources: first.sources || {},
+      missing: first.missing || [],
+      noBuildTime: first.noBuildTime || [],
+    };
+  });
+
+  /* The downloads page, not a direct file: python.org picks the right build
+     for the machine, and a URL naming a version would rot. */
+  ipcMain.handle('editor:open-python-site', () =>
+    shell.openExternal('https://www.python.org/downloads/'));
 
   ipcMain.handle('editor:open-dir', () => shell.openPath(buildsDir));
 

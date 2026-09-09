@@ -109,6 +109,45 @@
         </section>
 
         <section class="card">
+          <details id="replay-panel">
+            <summary>리플레이에서 가져오기</summary>
+
+            <div id="replay-setup-box" hidden>
+              <p id="replay-setup-why" class="warn"></p>
+              <div class="import-head">
+                <button id="replay-setup" type="button" class="primary" title="PyPI(pypi.org)에서 mpyq 와 s2protocol 을 받습니다.&#10;s2protocol 은 블리자드가 직접 공개한 리플레이 해독기입니다.&#10;&#10;설치 장소: 이 앱의 데이터 폴더 안 전용 환경&#10;시스템에 이미 있는 파이썬은 건드리지 않습니다.">준비하기</button>
+                <button id="replay-get-python" type="button" hidden>파이썬 받는 곳 열기</button>
+                <button id="replay-recheck" type="button">다시 확인</button>
+                <span id="replay-setup-state" class="muted small"></span>
+              </div>
+            </div>
+
+            <div id="replay-open-box" hidden>
+              <div class="import-head">
+                <button id="open-replay" type="button" class="primary">리플레이 열기…</button>
+                <span id="replay-source" class="muted small"></span>
+              </div>
+
+              <div id="replay-pick" hidden>
+                <p class="muted small">
+                  어느 쪽 빌드를 뽑을지 고르세요.
+                </p>
+                <ul id="replay-players" class="branch-list"></ul>
+
+                <div class="import-opts">
+                  <label class="check">
+                    <input id="replay-trim" type="checkbox" checked />
+                    <span>앞 <input id="replay-minutes" type="number" min="1" max="30"
+                      step="1" value="8" class="inline-num" />분까지만</span>
+                  </label>
+                </div>
+                <p id="replay-report" class="warn"></p>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <section class="card">
           <details id="import-panel">
             <summary>가져오기 — JSON 익스포트 / 텍스트</summary>
 

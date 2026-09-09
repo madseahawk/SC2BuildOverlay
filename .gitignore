@@ -7,3 +7,14 @@ assets/icon.original.ico
 # 단계 그림은 블리자드 저작물이라 저장소에 두지 않습니다. manifest.json 만
 # 남기고, 이미지는 각자 tools/fetch-icons.js 로 받거나 앱에서 내려받습니다.
 assets/icons/*.png
+
+# 리플레이는 각자 것이라 저장소에 두지 않습니다.
+replay/
+tools/__pycache__/
+.venv-replay/
+replay/out/
+.claude/
+
+# 빌드는 각자 뽑아 쓰는 것이라 저장소에 두지 않습니다. 배포판에 심을 샘플은
+# seed/ 에 한 개만 둡니다.
+builds/

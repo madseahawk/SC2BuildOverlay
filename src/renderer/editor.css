@@ -468,6 +468,15 @@ summary {
   margin: 0.5rem 0 0.2rem;
 }
 
+/* A number sitting inside a sentence — "앞 [8]분까지만" — rather than in its
+   own labelled field, so it stays narrow and does not break the line. */
+.inline-num {
+  width: 3.2rem;
+  margin: 0 0.15rem;
+  padding: 0.1rem 0.25rem;
+  text-align: right;
+}
+
 /* ---------- buttons / footer ---------- */
 
 button {

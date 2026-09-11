@@ -161,6 +161,7 @@ const TERMS = {
   Assimilator: '융화소',
   Gateway: '관문',
   WarpGate: '차원 관문',
+  ChronoBoost: '시간 증폭',
   Forge: '제련소',
   PhotonCannon: '광자포',
   ShieldBattery: '보호막 충전소',

@@ -68,6 +68,45 @@ NOISE = re.compile(
     r'RavenScramblerMissile|RavenRepairDrone)')
 NOISE_UPGRADE = re.compile(r'(Reward|Spray|GameHeart|Dance|Emote)')
 
+# A morph turns a building into a different building for good, and that is a
+# build-order decision: 궤도 사령부 timing decides a Terran game and a Zerg
+# build without 번식지 is not a build. None of it reaches SUnitInitEvent,
+# because morphing creates no new unit — only SUnitTypeChangeEvent sees it.
+#
+# An allowlist, not a denylist: the same event also carries siege mode,
+# Viking mode, depot lowering, Liberator mode and every other transient
+# state, and those come and go dozens of times per game.
+MORPHS = {
+    'OrbitalCommand', 'PlanetaryFortress',       # Terran
+    'WarpGate',                                  # Protoss
+    'Lair', 'Hive', 'GreaterSpire', 'LurkerDen', # Zerg
+}
+
+# An add-on's unit type names the building it is attached to, and it goes bare
+# while detached: `StarportTechLab` -> `TechLab` -> `BarracksTechLab` is a Tech
+# Lab moving from the Starport to the Barracks. That is what a swap actually
+# achieves, so that is what gets reported.
+ADDON_ON = re.compile(r'^(Barracks|Factory|Starport)?(TechLab|Reactor)$')
+
+# A lift and a landing this far apart are one swap. Beyond it the add-on
+# sat free and something else claimed it later, so the landing is its own
+# moment rather than a consequence of that lift.
+SWAP_WINDOW = 40 * LOOPS
+
+# Chrono Boost only ever targets the caster's own production buildings, and
+# it is used more than once in any real game. That is enough to pick it out
+# of the numbered abilities without a name table.
+MIN_CHRONO = 2
+
+# Chrono Boost goes on a Nexus or on something that produces or researches.
+# Listing them is what stops an attack order on an own building from being
+# mistaken for it.
+CHRONO_TARGETS = {
+    'Nexus', 'Gateway', 'WarpGate', 'CyberneticsCore', 'Forge',
+    'TwilightCouncil', 'RoboticsFacility', 'RoboticsBay', 'Stargate',
+    'FleetBeacon', 'TemplarArchives', 'DarkShrine',
+}
+
 RACE_CODE = {'프로토스': 'P', '테란': 'T', '저그': 'Z',
              'Protoss': 'P', 'Terran': 'T', 'Zerg': 'Z'}
 
@@ -113,7 +152,7 @@ RESEARCH_TIME = {
     # Terran
     'Stimpack': 100, 'CombatShield': 79, 'ConcussiveShells': 43,
     'InfernalPreigniter': 79, 'DrillingClaws': 79, 'SmartServos': 79,
-    'MagFieldAccelerator': 79,
+    'MagFieldAccelerator': 140, 'InterferenceMatrix': 57,
     'CloakingField': 79, 'BansheeSpeed': 121,
     'AdvancedBallistics': 79, 'YamatoCannon': 100, 'PersonalCloaking': 100,
     'HiSecAutoTracking': 57, 'BuildingArmor': 100, 'NeosteelArmor': 100,
@@ -156,6 +195,7 @@ ALIASES = {
     'WarpGateResearch': 'WarpGate',
     # Terran
     'PunisherGrenades': 'ConcussiveShells',
+    'CycloneLockOnDamageUpgrade': 'MagFieldAccelerator',
     'ShieldWall': 'CombatShield',
     'BansheeCloak': 'CloakingField',
     'HighCapacityBarrels': 'InfernalPreigniter',
@@ -365,6 +405,179 @@ def pair(cmd_loops, born_loops):
     return spread, min(gaps), len(gaps)
 
 
+def unit_tags(replay):
+    """Every unit tag the tracker mentions, and what it currently is.
+
+    Commands name their target by tag, and morphs are reported by tag, so this
+    is what turns either into a unit name. Type changes are applied in order,
+    so the map holds whatever the unit was last seen as.
+    """
+    owner = {}
+    kind_of = {}
+    for event in replay.tracker:
+        kind = event['_event'].rsplit('.', 1)[-1]
+        tag = event.get('m_unitTagIndex')
+        if tag is None:
+            continue
+        if kind in ('SUnitBornEvent', 'SUnitInitEvent'):
+            owner[tag] = event.get('m_controlPlayerId')
+            kind_of[tag] = txt(event['m_unitTypeName'])
+        elif kind == 'SUnitTypeChangeEvent':
+            kind_of[tag] = txt(event['m_unitTypeName'])
+    return owner, kind_of
+
+
+def morph_steps(replay, player, owner):
+    """Buildings that became something else for good.
+
+    SUnitTypeChangeEvent says which unit changed but not who owns it, so
+    ownership comes from the tag map built off the birth and placement events.
+    """
+    out = []
+    seen = set()
+    for event in replay.tracker:
+        if not event['_event'].endswith('SUnitTypeChangeEvent'):
+            continue
+        tag = event['m_unitTagIndex']
+        if owner.get(tag) != player['id']:
+            continue
+        name = txt(event['m_unitTypeName'])
+        if name not in MORPHS:
+            continue
+        # Only the first time. A building that lifts off and lands again
+        # re-announces its own type, so an Orbital Command that gets moved
+        # reports the morph once per landing — three times in one game here.
+        if (tag, name) in seen:
+            continue
+        seen.add((tag, name))
+        out.append({'loop': event['_gameloop'], 'name': name,
+                    'kind': 'morph', 'source': 'event'})
+    return out
+
+
+def swap_steps(replay, player, owner):
+    """Add-ons that changed hands, reported as what they ended up on.
+
+    Followed on the add-on rather than the building. Two buildings lifting off
+    says a swap happened but not what came of it, and the useful line is the
+    outcome — 병영 기술실 — not the fact that something took off.
+
+    Detached is the bare type; attached names the building. So a bare state
+    followed by a named one is the moment the add-on landed on something new.
+    An Init event resets the history, because tag numbers get reused (one tag
+    here was a Viking before it was a Tech Lab).
+    """
+    attached = {}
+    hosted = {}     # the building it was on before it came free
+    out = []
+    for event in replay.tracker:
+        kind = event['_event'].rsplit('.', 1)[-1]
+        tag = event.get('m_unitTagIndex')
+        if tag is None or kind not in ('SUnitInitEvent', 'SUnitBornEvent',
+                                       'SUnitTypeChangeEvent'):
+            continue
+        addon = ADDON_ON.match(txt(event['m_unitTypeName']))
+        if not addon:
+            attached.pop(tag, None)
+            continue
+        building, part = addon.group(1), addon.group(2)
+
+        if kind != 'SUnitTypeChangeEvent':
+            attached[tag] = building   # freshly built, or a reused tag
+            continue
+
+        was = attached.get(tag, 'unknown')
+        attached[tag] = building
+        if building is None:
+            # Came off. Named for the building it was on, which is the one
+            # that just gave up its add-on.
+            if was and was != 'unknown' and owner.get(tag) == player['id']:
+                hosted[tag] = was
+                # Named for the add-on alone, with the building it left in the
+                # note. Calling it `우주공항 기술실 분리` and then
+                # `병영 기술실` two lines later names one Tech Lab two ways and
+                # reads as two of them; and a bare add-on icon is itself what
+                # detached looks like.
+                out.append({'loop': event['_gameloop'], 'name': part,
+                            'kind': 'detach', 'source': 'event',
+                            'from': was})
+            continue
+        # Only a move onto a building counts; going bare was handled above.
+        if was is not None or owner.get(tag) != player['id']:
+            continue
+        out.append({'loop': event['_gameloop'], 'name': building + part,
+                    'kind': 'swap', 'source': 'event',
+                    # Where it came from. Naming the partner is what makes the
+                    # trade readable — `병영 기술실 // 우주공항에서` says the whole
+                    # swap on one line, without a second line for the detach
+                    # that the result already implies.
+                    'from': hosted.pop(tag, None)})
+    return out
+
+
+def mule_steps(replay, player):
+    """Every MULE call-down. A MULE appears at once, so its birth is the press."""
+    out = []
+    for event in replay.tracker:
+        if not event['_event'].endswith('SUnitBornEvent'):
+            continue
+        if event.get('m_controlPlayerId') != player['id']:
+            continue
+        if txt(event['m_unitTypeName']) != 'MULE':
+            continue
+        out.append({'loop': event['_gameloop'], 'name': 'MULE',
+                    'kind': 'mule', 'source': 'event'})
+    return out
+
+
+def chrono_steps(replay, player):
+    """Chrono Boost casts, and the building each one went on.
+
+    The ability is numbered, not named, so it is identified by what it does:
+    every use targets a building the caster owns, and it is used more than
+    once. Attack orders fail the first test (they land on units, and on the
+    opponent's), which is what separates them.
+    """
+    if RACE_CODE.get(player['race']) != 'P' or player['user'] is None:
+        return []
+
+    owner, kind_of = unit_tags(replay)
+    by_ability = collections.defaultdict(list)
+    for event in replay.game:
+        if not event['_event'].endswith('SCmdEvent'):
+            continue
+        if (event.get('_userid') or {}).get('m_userId') != player['user']:
+            continue
+        ability = event.get('m_abil') or {}
+        if ability.get('m_abilLink') is None:
+            continue
+        target = (event.get('m_data') or {}).get('TargetUnit')
+        if not target or not target.get('m_tag'):
+            continue
+        # The tracker's tag index sits in the high bits of a command's tag.
+        index = target['m_tag'] >> 18
+        if owner.get(index) != player['id']:
+            continue
+        by_ability[(ability['m_abilLink'], ability.get('m_abilCmdIndex'))].append(
+            (event['_gameloop'], kind_of.get(index)))
+
+    best = None
+    for key, rows in by_ability.items():
+        if len(rows) < MIN_CHRONO:
+            continue
+        # Every target must be a building this player owns. A command that ever
+        # targeted a unit is not Chrono Boost.
+        if any(name is None or name not in CHRONO_TARGETS for _, name in rows):
+            continue
+        if best is None or len(rows) > len(best[1]):
+            best = (key, rows)
+
+    if not best:
+        return []
+    return [{'loop': loop, 'name': 'ChronoBoost', 'kind': 'chrono',
+             'source': 'event', 'on': name} for loop, name in sorted(best[1])]
+
+
 def births(replay, player):
     out = {}
     for event in replay.tracker:
@@ -483,8 +696,12 @@ def collapse(steps):
             index += 1
             continue
         count = 1
+        # Same kind as well as same name. Two Tech Labs built together are one
+        # line, but one built and one taken in a swap are two different
+        # decisions — merging them swallowed the swap and its note.
         while (index + count < len(steps)
                and steps[index + count]['name'] == step['name']
+               and steps[index + count]['kind'] == step['kind']
                and steps[index + count]['loop'] - step['loop'] <= 12 * LOOPS):
             count += 1
         out.append(dict(step, count=count, filler=False))
@@ -579,10 +796,25 @@ def korean_for(name, terms):
     return None
 
 
-def steps_for(replay, player, derived):
-    """Every step, timed at the moment it was started."""
+def steps_for(replay, player, derived, extras=None):
+    """Every step, timed at the moment it was started.
+
+    @param extras  which optional kinds to include: 'chrono', 'mule', 'swap'.
+      Morphs are not optional — without them a Terran build never mentions
+      궤도 사령부 and a Zerg build never mentions 번식지.
+    """
+    extras = extras or set()
     steps = []
     unknown = set()
+
+    owner, _ = unit_tags(replay)
+    steps += morph_steps(replay, player, owner)
+    if 'swap' in extras:
+        steps += swap_steps(replay, player, owner)
+    if 'mule' in extras:
+        steps += mule_steps(replay, player)
+    if 'chrono' in extras:
+        steps += chrono_steps(replay, player)
 
     for event in replay.tracker:
         kind = event['_event'].rsplit('.', 1)[-1]
@@ -615,11 +847,59 @@ def steps_for(replay, player, derived):
 
 
 
+def note(step, terms, missing):
+    """The `// 메모` for a step, or None.
+
+    Only Chrono Boost has one: the building it went on. It reads better as a
+    note than folded into the action, and it keeps the action column matching
+    a dictionary term so the step still gets its picture.
+    """
+    if step['kind'] == 'detach':
+        # `…에서 분리` beside `…에서 가져옴` makes the two halves of a swap read
+        # as a matched pair, and keeps the verb in the note for both.
+        came = korean_for(step['from'], terms) if step.get('from') else None
+        if came is None and step.get('from'):
+            missing.add(step['from'])
+            came = step['from']
+        return '%s에서 분리' % came if came else '분리'
+    if step['kind'] == 'swap':
+        # 가져옴 rather than 맞바꿈 or 교환: those claim a trade, which is wrong
+        # when a building gives up its add-on and never lands again. This one
+        # is true either way.
+        #
+        # Named even when it came from the same kind of building — 우주공항
+        # 기술실 ← 우주공항 reads oddly, but a blank note on one line among
+        # several that name their source reads as a gap.
+        origin = step.get('from')
+        came = korean_for(origin, terms) if origin else None
+        if came is None and origin:
+            missing.add(origin)
+            came = origin
+        return '%s에서 가져옴' % came if came else '스왑'
+    if step['kind'] != 'chrono' or not step.get('on'):
+        return None
+    on = korean_for(step['on'], terms)
+    if on is None:
+        missing.add(step['on'])
+        on = step['on']
+    return on
+
+
 def label(step, terms, buildings, missing):
     korean = korean_for(step['name'], terms)
     if korean is None:
         missing.add(step['name'])
         korean = step['name']
+
+    if step['kind'] == 'detach':
+        # The bare add-on; what happened to it is in the note.
+        return korean
+    if step['kind'] == 'chrono':
+        # Which building it went on belongs in the note, not here. The action
+        # column is what the icon lookup matches, and `인공제어소에 시간 증폭`
+        # matched the Cybernetics Core — so a chrono cast drew the icon of a
+        # building it did not build.
+        return korean
     if step.get('filler'):
         return '%s 계속 생산' % korean
     if step['count'] > 1:
@@ -628,12 +908,13 @@ def label(step, terms, buildings, missing):
     return korean
 
 
-def build_text(replay, player, derived, terms, buildings, limit=None):
+def build_text(replay, player, derived, terms, buildings, limit=None,
+               extras=None):
     """The build file's text, plus what went into it.
 
     @returns (lines, step count, {time source: n}, unknown names, no-build-time names)
     """
-    steps, unknown = steps_for(replay, player, derived)
+    steps, unknown = steps_for(replay, player, derived, extras)
     if limit:
         steps = [s for s in steps if s['loop'] <= limit]
     rows = collapse(steps)
@@ -652,10 +933,12 @@ def build_text(replay, player, derived, terms, buildings, limit=None):
     ]
     for step in rows:
         food = supply_at(curve, step['loop'])
-        lines.append(('%s %s %s' % (
+        memo = note(step, terms, missing)
+        lines.append(('%s %s %s%s' % (
             clock(step['loop']).ljust(5),
             ('@%d' % food if food is not None else '').ljust(4),
-            label(step, terms, buildings, missing))).rstrip())
+            label(step, terms, buildings, missing),
+            '  // %s' % memo if memo else '')).rstrip())
 
     # Counted over the lines actually written, not the units behind them: with
     # `추적자 3기` on one line, counting units made the sources add up to far
@@ -724,7 +1007,7 @@ def run_json(args):
     out = []
     for replay, player in picked:
         lines, count, sources, missing, unknown = build_text(
-            replay, player, derived, terms, buildings, limit)
+            replay, player, derived, terms, buildings, limit, args.extras)
         out.append({
             'file': replay.path,
             'name': os.path.splitext(os.path.basename(replay.path))[0],
@@ -750,11 +1033,19 @@ def main():
     ap.add_argument('--player', help='플레이어 번호 또는 이름 일부 (기본: 사람)')
     ap.add_argument('--list', action='store_true', help='플레이어만 보여주고 끝냅니다')
     ap.add_argument('--minutes', type=float, help='앞 N분까지만')
+    ap.add_argument('--chrono', action='store_true',
+                    help='시간 증폭을 쓴 시각과 대상도 넣습니다 (프로토스)')
+    ap.add_argument('--mule', action='store_true',
+                    help='지게로봇을 부른 시각도 넣습니다 (테란)')
+    ap.add_argument('--swap', action='store_true',
+                    help='애드온 스왑도 넣습니다 (테란)')
     ap.add_argument('--json', action='store_true',
                     help='사람이 읽는 파일 대신 JSON 을 stdout 으로 (앱이 씁니다)')
     ap.add_argument('--repo', default=REPO,
                     help='용어 사전과 아이콘 매니페스트를 찾을 곳')
     args = ap.parse_args()
+    args.extras = {name for name in ('chrono', 'mule', 'swap')
+                   if getattr(args, name)}
 
     if args.json:
         # The app gets a message it can show, not a traceback it cannot.
@@ -803,7 +1094,7 @@ def main():
     for replay, player in picked:
         name = os.path.splitext(os.path.basename(replay.path))[0]
         lines, count, sources, missing, unknown = build_text(
-            replay, player, derived, terms, buildings, limit)
+            replay, player, derived, terms, buildings, limit, args.extras)
         write_lines(os.path.join(args.out, name + '.txt'), lines)
         report.append('%s  <- %s (%s)' % (name, player['name'], player['race']))
         if replay.fell_back_to:

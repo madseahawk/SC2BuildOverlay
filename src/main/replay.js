@@ -271,10 +271,21 @@ function createReplayTool({ resourcesDir, venvDir, documentsDir }) {
    * @param {number|string} [opts.player]   id or name fragment; the human by default
    * @param {number} [opts.minutes]         keep only the first N minutes
    */
-  function convert(file, { player, minutes } = {}) {
+  /**
+   * @param {object} opts
+   * @param {number|string} [opts.player]  id or name fragment; the human by default
+   * @param {number} [opts.minutes]        keep only the first N minutes
+   * @param {string[]} [opts.extras]       'chrono' | 'mule' | 'swap'
+   */
+  function convert(file, { player, minutes, extras } = {}) {
     const args = [file];
     if (player != null && player !== '') args.push('--player', String(player));
     if (minutes) args.push('--minutes', String(minutes));
+    // Named one by one rather than passed as a list, so an unknown name is
+    // rejected by the script's own argument parsing instead of ignored.
+    for (const name of ['chrono', 'mule', 'swap']) {
+      if (extras && extras.includes(name)) args.push('--' + name);
+    }
     return call(args);
   }
 

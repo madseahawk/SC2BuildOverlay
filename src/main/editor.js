@@ -342,9 +342,9 @@ function setupEditor({ buildsDir, iconPath, library, getGameState, replayTool })
     return { ok: true, replay };
   });
 
-  ipcMain.handle('editor:convert-replay', async (_e, { player, minutes } = {}) => {
+  ipcMain.handle('editor:convert-replay', async (_e, { player, minutes, extras } = {}) => {
     if (!lastReplay) return { ok: false, message: '먼저 리플레이를 여세요.' };
-    const result = await replayTool.convert(lastReplay.file, { player, minutes });
+    const result = await replayTool.convert(lastReplay.file, { player, minutes, extras });
     if (!result.ok) return result;
 
     const first = (result.builds || [])[0];

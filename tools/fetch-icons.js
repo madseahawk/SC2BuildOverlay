@@ -121,6 +121,12 @@ const EXTRA_TERMS = [
   // The pack predates the Cyclone research being renamed to Mag-Field
   // Accelerator; the art is the same tech lab upgrade either way.
   ['자기장 가속기', 'btn-upgrade-terran-cyclonerangeupgrade'],
+  // Chrono Surge is a co-op ability, not Chrono Boost — so unlike 진동 가시뼈
+  // this is not the same thing under another name. It stands in anyway because
+  // of which way the confusion runs: the pack has no Chrono Boost art, and a
+  // blue energy icon beside the words 시간 증폭 cannot be mistaken for some
+  // other action the way a wrong *building* icon could.
+  ['시간 증폭', 'btn-ability-spearofadun-chronosurge'],
 
   // Zerg upgrade levels
   ['근접 공격 2단계', 'btn-upgrade-zerg-meleeattacks-level2'],

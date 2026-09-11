@@ -1,7 +1,7 @@
 {
   "source": "https://github.com/BurnySc2/sc2-planner (master/src/icons/png)",
   "note": "코드는 MIT. 아이콘 그림은 Blizzard Entertainment 저작물이며 개인·비상업 용도로만 사용합니다.",
-  "generated": "2026-09-09",
+  "generated": "2026-09-10",
   "terms": {
     "사령부": "btn-building-terran-commandcenter",
     "궤도 사령부": "btn-building-terran-surveillancestation",
@@ -183,6 +183,7 @@
     "진동 가시뼈": "btn-upgrade-kerrigan-seismicspines",
     "그림자 걸음": "btn-ability-protoss-stealth-blink",
     "자기장 가속기": "btn-upgrade-terran-cyclonerangeupgrade",
+    "시간 증폭": "btn-ability-spearofadun-chronosurge",
     "근접 공격 2단계": "btn-upgrade-zerg-meleeattacks-level2",
     "근접 공격 3단계": "btn-upgrade-zerg-meleeattacks-level3",
     "발사 공격 2단계": "btn-upgrade-zerg-missileattacks-level2",

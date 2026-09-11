@@ -53,6 +53,9 @@ const el = {
   replayPlayers: $('replay-players'),
   replayTrim: $('replay-trim'),
   replayMinutes: $('replay-minutes'),
+  replayChrono: $('replay-chrono'),
+  replayMule: $('replay-mule'),
+  replaySwap: $('replay-swap'),
   replayReport: $('replay-report'),
 
   status: $('status'),
@@ -637,6 +640,18 @@ function replayMinutes() {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+/**
+ * The optional step kinds. Off by default: they are extra detail, and a build
+ * order is easier to follow without them until you want them.
+ */
+function replayExtras() {
+  return [
+    el.replayChrono.checked ? 'chrono' : null,
+    el.replayMule.checked ? 'mule' : null,
+    el.replaySwap.checked ? 'swap' : null,
+  ].filter(Boolean);
+}
+
 function renderReplayPlayers(players, chosen) {
   el.replayPlayers.replaceChildren();
 
@@ -682,6 +697,7 @@ async function useReplayPlayer(playerId, players) {
   const result = await window.editor.convertReplay({
     player: playerId,
     minutes: replayMinutes(),
+    extras: replayExtras(),
   });
   if (!result.ok) {
     el.replayReport.textContent = result.message || '읽지 못했습니다.';
@@ -798,8 +814,9 @@ window.editor.onReplayProgress((line) => {
   el.replaySetupState.textContent = line;
 });
 
-// Trimming re-converts the player already chosen, the way the JSON options do.
-[el.replayTrim, el.replayMinutes].forEach((input) =>
+// Any option re-converts the player already chosen, the way the JSON options do.
+[el.replayTrim, el.replayMinutes, el.replayChrono, el.replayMule,
+ el.replaySwap].forEach((input) =>
   input.addEventListener('change', () => {
     if (state.replay) useReplayPlayer(state.replay.player, state.replay.players);
   }));

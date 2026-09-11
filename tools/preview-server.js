@@ -93,6 +93,7 @@ const replayApi = (() => {
       const got = await tool.convert(REPLAY_FILE, {
         player: params.get('player'),
         minutes: minutes ? Number(minutes) : null,
+        extras: (params.get('extras') || '').split(',').filter(Boolean),
       });
       if (!got.ok) return got;
       const first = (got.builds || [])[0];
@@ -251,8 +252,9 @@ const EDITOR_STUB = `<script>
         { id: 2, name: '인공지능 칸 (아주 쉬움)', race: '프로토스', human: false, won: false }
       ]
     } })`},
-    convertReplay: async ({ player, minutes }) => ${REPLAY_FILE
-      ? "fetch('/api/replay/convert?player=' + player + (minutes ? '&minutes=' + minutes : '')).then((r) => r.json())"
+    convertReplay: async ({ player, minutes, extras }) => ${REPLAY_FILE
+      ? "fetch('/api/replay/convert?player=' + player + (minutes ? '&minutes=' + minutes : '')"
+        + " + '&extras=' + (extras || []).join(',')).then((r) => r.json())"
       : `({
       ok: true, build: SAMPLE, problems: [],
       steps: player === 1 ? 22 : 12,
